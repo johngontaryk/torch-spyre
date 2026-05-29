@@ -33,6 +33,31 @@ class RuntimeOperation;
 namespace spyre {
 
 /**
+ * @brief Result of JobPlan validation
+ *
+ * Contains the list of validation errors found during JobPlan validation.
+ * An empty error list indicates successful validation.
+ */
+struct ValidationResult {
+  /**
+   * @brief List of validation error messages
+   *
+   * Each string describes a specific validation failure. Empty vector
+   * indicates the JobPlan passed all validation checks.
+   */
+  std::vector<std::string> errors;
+
+  /**
+   * @brief Check if validation was successful
+   *
+   * @return true if no errors were found, false otherwise
+   */
+  bool isValid() const {
+    return errors.empty();
+  }
+};
+
+/**
  * @brief Base class for host compute operation metadata
  *
  * This polymorphic base class allows different host compute operations
@@ -303,14 +328,14 @@ struct JobPlan {
    * - P2-15: host compute metadata validation (blocked - not yet implemented)
    * - P2-16: Additional structural validation (blocked - not yet implemented)
    *
-   * @return std::vector<std::string> List of validation error messages.
-   *         Empty vector indicates successful validation.
+   * @return ValidationResult containing list of validation error messages.
+   *         Empty error list indicates successful validation.
    *
    * @note This is currently a skeleton implementation that auto-validates
    *       (returns empty error list). Full validation logic will be added
    *       once the blocked dependencies are resolved.
    */
-  std::vector<std::string> validate() const;
+  ValidationResult validate() const;
 
   /**
    * @brief Ordered sequence of steps
