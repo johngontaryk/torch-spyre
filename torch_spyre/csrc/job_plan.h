@@ -291,6 +291,28 @@ class JobPlanStepHostCompute final : public JobPlanStep {
  */
 struct JobPlan {
   /**
+   * @brief Validate the JobPlan structure and configuration
+   *
+   * Runs all validation checks (P2-13 through P2-16) and collects all errors.
+   * This method is called after JobPlan construction to ensure the plan is
+   * well-formed before execution.
+   *
+   * Validation checks include:
+   * - P2-13: expected_input_shapes validation (blocked - not yet implemented)
+   * - P2-14: JobPlan step ordering validation (blocked - not yet implemented)
+   * - P2-15: host compute metadata validation (blocked - not yet implemented)
+   * - P2-16: Additional structural validation (blocked - not yet implemented)
+   *
+   * @return std::vector<std::string> List of validation error messages.
+   *         Empty vector indicates successful validation.
+   *
+   * @note This is currently a skeleton implementation that auto-validates
+   *       (returns empty error list). Full validation logic will be added
+   *       once the blocked dependencies are resolved.
+   */
+  std::vector<std::string> validate() const;
+
+  /**
    * @brief Ordered sequence of steps
    *
    * During LaunchKernel, SpyreStream calls construct(ctx) on each step in
