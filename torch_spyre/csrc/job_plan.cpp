@@ -97,8 +97,8 @@ std::unique_ptr<flex::RuntimeOperation> JobPlanStepHostCompute::construct(
   return op;
 }
 
-std::vector<std::string> JobPlan::validate() const {
-  std::vector<std::string> errors;
+ValidationResult JobPlan::validate() const {
+  ValidationResult result;
 
   // P2-13: expected_input_shapes validation
   // TODO: Implement once expected_input_shapes validation logic is defined
@@ -126,7 +126,7 @@ std::vector<std::string> JobPlan::validate() const {
 
   // Skeleton implementation: auto-validate (return empty error list)
   // Full validation logic will be added once blocked dependencies are resolved
-  return errors;
+  return result;
 }
 
 }  // namespace spyre
