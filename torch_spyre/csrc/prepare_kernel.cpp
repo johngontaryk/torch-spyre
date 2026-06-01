@@ -411,7 +411,7 @@ std::unique_ptr<JobPlan> JobPlanBuilder::translateJobExecPlan() {
     }
   }
 
-  // Parse and validate the expected input shapes
+  // Parse and validate the expected input shapes from top-level SpyreCode
   auto expected_input_shapes = translateInputShapes(job_exec_plan);
 
   // TODO(jni): pinned buffer to be added as std::map once HostCompute provided
@@ -428,55 +428,42 @@ std::unique_ptr<JobPlan> JobPlanBuilder::translateJobExecPlan() {
 std::vector<std::vector<int64_t>> JobPlanBuilder::translateInputShapes(
     const nlohmann::json& job_exec_plan) {
   std::vector<std::vector<int64_t>> expected_input_shapes;
+
+  // Read expected_input_shapes from top-level SpyreCode JSON
+  TORCH_CHECK(spyrecode_json_.contains("expected_input_shapes"),
+              "SpyreCode JSON missing 'expected_input_shapes' field");
+
+  const auto& input_shapes = spyrecode_json_["expected_input_shapes"];
+  TORCH_CHECK(input_shapes.is_array(),
+              "SpyreCode 'expected_input_shapes' must be an array");
+
+  for (const auto& shape : input_shapes) {
+    TORCH_CHECK(shape.is_array(),
+                "Each expected input shape in SpyreCode "
+                "'expected_input_shapes' must be an array");
+    TORCH_CHECK(!shape.empty(),
+                "SpyreCode 'expected_input_shapes' contains an empty shape");
+
+    expected_input_shapes.push_back(shape.get<std::vector<int64_t>>());
+  }
+
+  // Check if JobExecPlan contains ComputeOnDevice operations
   bool has_compute_on_device = false;
-  std::optional<size_t> expected_rank;
-
   for (const auto& command : job_exec_plan) {
-    TORCH_CHECK(command.contains("command") && command["command"].is_string(),
-                "SpyreCode command missing 'command' field while translating "
-                "expected_input_shapes");
-
-    const std::string command_type = command["command"].get<std::string>();
-    if (command_type != "ComputeOnDevice") {
-      continue;
-    }
-
-    has_compute_on_device = true;
-
-    const auto& properties =
-        command.contains("properties") ? command["properties"] : nlohmann::json();
-
-    TORCH_CHECK(properties.contains("expected_input_shapes"),
-                "ComputeOnDevice command missing 'expected_input_shapes'");
-
-    const auto& input_shapes = properties["expected_input_shapes"];
-    TORCH_CHECK(input_shapes.is_array(),
-                "ComputeOnDevice 'expected_input_shapes' must be an array");
-
-    for (const auto& shape : input_shapes) {
-      TORCH_CHECK(shape.is_array(),
-                  "Each expected input shape in ComputeOnDevice "
-                  "'expected_input_shapes' must be an array");
-      TORCH_CHECK(!shape.empty(),
-                  "ComputeOnDevice 'expected_input_shapes' contains an empty "
-                  "shape");
-
-      if (!expected_rank.has_value()) {
-        expected_rank = shape.size();
-      } else {
-        TORCH_CHECK(
-            shape.size() == expected_rank.value(),
-            "ComputeOnDevice 'expected_input_shapes' has inconsistent "
-            "dimension counts across inputs");
+    if (command.contains("command") && command["command"].is_string()) {
+      const std::string command_type = command["command"].get<std::string>();
+      if (command_type == "ComputeOnDevice") {
+        has_compute_on_device = true;
+        break;
       }
-
-      expected_input_shapes.push_back(shape.get<std::vector<int64_t>>());
     }
   }
 
+  // For JobPlans with ComputeOnDevice: shapes must be non-empty
   if (has_compute_on_device) {
     TORCH_CHECK(!expected_input_shapes.empty(),
-                "ComputeOnDevice requires non-empty 'expected_input_shapes'");
+                "JobPlan with ComputeOnDevice requires non-empty "
+                "'expected_input_shapes'");
   }
 
   return expected_input_shapes;
