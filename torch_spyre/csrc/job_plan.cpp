@@ -97,8 +97,8 @@ std::unique_ptr<flex::RuntimeOperation> JobPlanStepHostCompute::construct(
   return op;
 }
 
-ValidationResult JobPlan::validate() const {
-  ValidationResult result;
+JobPlan::ValidationResult JobPlan::validate() const {
+  JobPlan::ValidationResult result;
 
   // P2-13: expected_input_shapes validation
   // TODO: Implement once expected_input_shapes validation logic is defined
@@ -124,7 +124,7 @@ ValidationResult JobPlan::validate() const {
   // - Verify pinned_buffers are properly allocated
   // - Verify CompositeAddress validity in steps
 
-  // Skeleton implementation: auto-validate (return empty error list)
+  // Skeleton implementation: auto-validate (return empty message list)
   // Full validation logic will be added once blocked dependencies are resolved
   return result;
 }

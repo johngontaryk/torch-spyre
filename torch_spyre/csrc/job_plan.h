@@ -22,6 +22,7 @@
 #include <flex/flex.hpp>
 #include <functional>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -31,31 +32,6 @@ class RuntimeOperation;
 }
 
 namespace spyre {
-
-/**
- * @brief Result of JobPlan validation
- *
- * Contains the list of validation errors found during JobPlan validation.
- * An empty error list indicates successful validation.
- */
-struct ValidationResult {
-  /**
-   * @brief List of validation error messages
-   *
-   * Each string describes a specific validation failure. Empty vector
-   * indicates the JobPlan passed all validation checks.
-   */
-  std::vector<std::string> errors;
-
-  /**
-   * @brief Check if validation was successful
-   *
-   * @return true if no errors were found, false otherwise
-   */
-  bool isValid() const {
-    return errors.empty();
-  }
-};
 
 /**
  * @brief Base class for host compute operation metadata
@@ -316,11 +292,58 @@ class JobPlanStepHostCompute final : public JobPlanStep {
  */
 struct JobPlan {
   /**
+   * @brief Severity level for validation messages
+   */
+  enum class Severity {
+    ERROR,    // Critical issue that prevents execution
+    WARNING,  // Non-critical issue that may affect behavior
+    INFO      // Informational message
+  };
+
+  /**
+   * @brief A single validation message with severity
+   */
+  struct ValidationMessage {
+    Severity severity;
+    std::string message;
+  };
+
+  /**
+   * @brief Result of JobPlan validation
+   *
+   * Contains the list of validation messages found during JobPlan validation.
+   * An empty message list indicates successful validation.
+   */
+  struct ValidationResult {
+    /**
+     * @brief List of validation messages
+     *
+     * Each message describes a validation finding with its severity level.
+     * Empty vector indicates the JobPlan passed all validation checks.
+     */
+    std::vector<ValidationMessage> messages;
+
+    /**
+     * @brief Check if validation was successful
+     *
+     * @return true if no error-level messages were found, false otherwise
+     */
+    bool isValid() const {
+      for (const auto& msg : messages) {
+        if (msg.severity == Severity::ERROR) {
+          return false;
+        }
+      }
+      return true;
+    }
+  };
+
+  /**
    * @brief Validate the JobPlan structure and configuration
    *
-   * Runs all validation checks (P2-13 through P2-16) and collects all errors.
-   * This method is called after JobPlan construction to ensure the plan is
-   * well-formed before execution.
+   * Runs all validation checks (P2-13 through P2-16) and collects all messages.
+   * This method is called during PrepareKernel after JobPlan construction to
+   * ensure the plan is well-formed before execution.
    *
    * Validation checks include:
    * - P2-13: expected_input_shapes validation (blocked - not yet implemented)
@@ -328,11 +351,11 @@ struct JobPlan {
    * - P2-15: host compute metadata validation (blocked - not yet implemented)
    * - P2-16: Additional structural validation (blocked - not yet implemented)
    *
-   * @return ValidationResult containing list of validation error messages.
-   *         Empty error list indicates successful validation.
+   * @return ValidationResult containing list of validation messages with severity.
+   *         Empty message list indicates successful validation.
    *
    * @note This is currently a skeleton implementation that auto-validates
-   *       (returns empty error list). Full validation logic will be added
+   *       (returns empty message list). Full validation logic will be added
    *       once the blocked dependencies are resolved.
    */
   ValidationResult validate() const;
