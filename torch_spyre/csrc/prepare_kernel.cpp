@@ -428,25 +428,27 @@ JobPlanBuilder::ValidationResult JobPlanBuilder::validate(
   JobPlanBuilder::ValidationResult result;
 
   // P2-13: expected_input_shapes validation
-  // TODO: Implement once expected_input_shapes validation logic is defined
+  // TODO(johngontaryk): Implement once expected_input_shapes validation logic
+  // is defined
   // - Verify expected_input_shapes is non-empty for compute JobPlans
   // - Verify shape dimensions are positive
   // - Verify shape count matches number of input tensors
 
   // P2-14: JobPlan step ordering validation
-  // TODO: Implement once step ordering rules are defined
+  // TODO(johngontaryk): Implement once step ordering rules are defined
   // - Verify HostCompute steps precede their corresponding H2D steps
   // - Verify H2D steps precede Compute steps that depend on them
   // - Verify no circular dependencies in step ordering
 
   // P2-15: Host compute metadata validation
-  // TODO: Implement once host compute metadata structure is finalized
+  // TODO(johngontaryk): Implement once host compute metadata structure is
+  // finalized
   // - Verify metadata is non-null for HostCompute steps
   // - Verify output buffer sizes match metadata specifications
   // - Verify function pointers are valid
 
   // P2-16: Additional structural validation
-  // TODO: Implement additional validation checks as needed
+  // TODO(johngontaryk): Implement additional validation checks as needed
   // - Verify job_allocation is valid for compute JobPlans
   // - Verify pinned_buffers are properly allocated
   // - Verify CompositeAddress validity in steps
@@ -471,6 +473,7 @@ std::unique_ptr<JobPlan> JobPlanBuilder::build() {
       if (msg.severity == Severity::ERROR) {
         error_msg += "  ERROR: " + msg.message + "\n";
       } else if (msg.severity == Severity::WARNING) {
+        TORCH_WARN("JobPlan validation warning: ", msg.message);
         error_msg += "  WARNING: " + msg.message + "\n";
       }
     }

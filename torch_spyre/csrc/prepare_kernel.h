@@ -21,6 +21,7 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "flex/flex.hpp"
 #include "spyre_stream.h"
@@ -58,7 +59,7 @@ class JobPlanBuilder {
    * 3. Validate the JobPlan
    *
    * @return Prepared and validated JobPlan
-   * @throws std::runtime_error if validation fails
+   * @throws c10::Error if validation fails
    */
   std::unique_ptr<JobPlan> build();
 
@@ -124,8 +125,8 @@ class JobPlanBuilder {
    * - P2-16: Additional structural validation (blocked - not yet implemented)
    *
    * @param job_plan The JobPlan to validate
-   * @return ValidationResult containing list of validation messages with severity.
-   *         Empty message list indicates successful validation.
+   * @return ValidationResult containing list of validation messages with
+   * severity. Empty message list indicates successful validation.
    *
    * @note This is currently a skeleton implementation that auto-validates
    *       (returns empty message list). Full validation logic will be added
