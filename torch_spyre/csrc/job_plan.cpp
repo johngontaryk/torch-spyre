@@ -97,5 +97,4 @@ std::unique_ptr<flex::RuntimeOperation> JobPlanStepHostCompute::construct(
   return op;
 }
 
-
 }  // namespace spyre
