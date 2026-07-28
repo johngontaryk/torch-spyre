@@ -178,6 +178,45 @@ class HostBuffer {
 // function is defined as deeptools::processComputeOnHostCommand
 
 /**
+ * @brief Discriminator for SymbolicArg entries.
+ *
+ * kAddress  – the slot carries the HBM device address of a tensor.
+ *             value is resolved via compositeAddressToDmva() on
+ *             inputs_outputs[tensor_id].
+ * kDimension – the slot carries a runtime tensor dimension size.
+ *             Resolution (inputs_outputs[tensor_id].size(dim_index)) is
+ *             reserved for a follow-up issue; the consumer will
+ *             TORCH_CHECK-fail on this kind until it is implemented.
+ */
+enum class SymbolicArgKind : int32_t {
+  kAddress = 0,
+  kDimension = 1,
+};
+
+/**
+ * @brief One entry in the per-launch symbolic argument payload.
+ *
+ * Consumed positionally by JobPlanStepHostCompute::construct (Case 3):
+ * slot i in the correction vector is resolved from symbolic_args[i].
+ * Wrong count → loud TORCH_CHECK failure.
+ * Wrong order with right count → silent wrong numerics, so callers must
+ * preserve the backend's compile-time symbol order exactly.
+ *
+ * Fields:
+ *   kind       – how to resolve the value.
+ *   value      – reserved; not used by the current runtime consumer.
+ *   tensor_id  – index into LaunchContext::inputs_outputs.
+ *   dim_index  – for kDimension: which dimension of that tensor.
+ *                for kAddress:   unused (set to -1 by convention).
+ */
+struct SymbolicArg {
+  SymbolicArgKind kind;
+  int64_t value;
+  int64_t tensor_id;
+  int64_t dim_index;
+};
+
+/**
  * @brief Context passed to JobPlanStep::construct() at launch time
  *
  * Carries runtime data available at LaunchKernel time that was not available
@@ -189,6 +228,20 @@ struct LaunchContext {
    *
    */
   const std::vector<at::Tensor>& inputs_outputs;
+
+  /**
+   * @brief Per-argument typed symbolic payload (optional).
+   *
+   * When non-empty, JobPlanStepHostCompute::construct uses this vector to
+   * drive Case 3 resolution instead of the legacy tensor-iteration loop.
+   * Each entry maps one correction-vector slot to a tensor and a resolution
+   * kind.  The vector is consumed positionally: slot i ↔ symbolic_args[i].
+   *
+   * Empty means "use today's behavior" — the legacy loop over all context
+   * tensors, treating each as an address source.  This preserves back-compat
+   * for existing callers that pass no payload.
+   */
+  std::vector<SymbolicArg> symbolic_args;
 };
 
 /**

@@ -175,14 +175,61 @@ void JobPlanStepHostCompute::construct(LaunchContext& ctx,
     return;
   }
 
-  // Case 3: extract addresses from context tensors
+  // Case 3a: typed symbolic payload present — resolve each slot by kind.
+  if (!ctx.symbolic_args.empty()) {
+    //
+    TORCH_CHECK(ctx.inputs_outputs.size() >= ctx.symbolic_args.size(),
+                "SymbolicArg payload has ", ctx.symbolic_args.size(),
+                " entries but LaunchContext only has ",
+                ctx.inputs_outputs.size(), " tensors");
+
+    auto& allocator = SpyreAllocator::instance();
+    std::vector<int64_t> symbolic_values(ctx.symbolic_args.size());
+    for (size_t i = 0; i < ctx.symbolic_args.size(); ++i) {
+      const SymbolicArg& arg = ctx.symbolic_args[i];
+      TORCH_CHECK(arg.tensor_id >= 0 && static_cast<size_t>(arg.tensor_id) <
+                                            ctx.inputs_outputs.size(),
+                  "SymbolicArg[", i, "].tensor_id=", arg.tensor_id,
+                  " out of range [0, ", ctx.inputs_outputs.size(), ")");
+      switch (arg.kind) {
+        case SymbolicArgKind::kAddress: {
+          symbolic_values[i] =
+              static_cast<int64_t>(allocator.compositeAddressToDmva(
+                  static_cast<SharedOwnerCtx*>(ctx.inputs_outputs[arg.tensor_id]
+                                                   .storage()
+                                                   .data_ptr()
+                                                   .get_context())
+                      ->composite_addr));
+          break;
+        }
+        case SymbolicArgKind::kDimension: {
+          TORCH_CHECK(false,
+                      "SymbolicArgKind::kDimension is not yet implemented ");
+          break;
+        }
+        default:
+          TORCH_CHECK(false, "Unknown SymbolicArgKind value: ",
+                      static_cast<int32_t>(arg.kind));
+      }
+    }
+
+    launch_host_callback([this, symbolic_values](void*) {
+      deeptools::processComputeOnHostCommand(*hcm_, output_buffer_,
+                                             &symbolic_values);
+    });
+    return;
+  }
+
+  // Case 3b: no payload — legacy path: treat every context tensor as an
+  // address source in iteration order.  Back-compat for callers that pass no
+  // symbolic_args (empty payload).
   std::vector<int64_t> addresses(ctx.inputs_outputs.size());
   int addr_idx = 0;
   auto& allocator = SpyreAllocator::instance();
   for (auto& tensor : ctx.inputs_outputs) {
-    int64_t addr = allocator.compositeAddressToDmva(
+    int64_t addr = static_cast<int64_t>(allocator.compositeAddressToDmva(
         (static_cast<SharedOwnerCtx*>(tensor.storage().data_ptr().get_context())
-             ->composite_addr));
+             ->composite_addr)));
     addresses[addr_idx++] = addr;
   }
 
