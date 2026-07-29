@@ -133,23 +133,25 @@ void JobPlanStepHostCompute::construct(LaunchContext& ctx,
 
   // Case 3a: typed symbolic payload present — resolve each slot by kind.
   if (!ctx.symbolic_args.empty()) {
-    //
-    TORCH_CHECK(ctx.inputs_outputs.size() >= ctx.symbolic_args.size(),
-                "SymbolicArg payload has ", ctx.symbolic_args.size(),
-                " entries but LaunchContext only has ",
-                ctx.inputs_outputs.size(), " tensors");
-
     auto& allocator = SpyreAllocator::instance();
-    std::vector<int64_t> symbolic_values(ctx.symbolic_args.size());
+
+    // Resolved symbolic addresses
+    std::vector<int64_t> resolved_addresses(ctx.symbolic_args.size());
+
+    // Resolve each symbolic arg
     for (size_t i = 0; i < ctx.symbolic_args.size(); ++i) {
       const SymbolicArg& arg = ctx.symbolic_args[i];
+
+      // Verify tensor id exists
       TORCH_CHECK(arg.tensor_id >= 0 && static_cast<size_t>(arg.tensor_id) <
                                             ctx.inputs_outputs.size(),
                   "SymbolicArg[", i, "].tensor_id=", arg.tensor_id,
                   " out of range [0, ", ctx.inputs_outputs.size(), ")");
+
       switch (arg.kind) {
+        // Resolve each symbolic address using input and output tensors
         case SymbolicArgKind::kAddress: {
-          symbolic_values[i] =
+          resolved_addresses[i] =
               static_cast<int64_t>(allocator.compositeAddressToDmva(
                   static_cast<SharedOwnerCtx*>(ctx.inputs_outputs[arg.tensor_id]
                                                    .storage()
@@ -158,20 +160,22 @@ void JobPlanStepHostCompute::construct(LaunchContext& ctx,
                       ->composite_addr));
           break;
         }
+        // Resolve each symbolic dimension
         case SymbolicArgKind::kDimension: {
           TORCH_CHECK(false,
                       "SymbolicArgKind::kDimension is not yet implemented ");
           break;
         }
+        // Error - symbolic address kind unknown
         default:
           TORCH_CHECK(false, "Unknown SymbolicArgKind value: ",
                       static_cast<int32_t>(arg.kind));
       }
     }
 
-    launch_host_callback([this, symbolic_values](void*) {
+    launch_host_callback([this, resolved_addresses](void*) {
       deeptools::processComputeOnHostCommand(*hcm_, output_buffer_,
-                                             &symbolic_values);
+                                             &resolved_addresses);
     });
     return;
   }
