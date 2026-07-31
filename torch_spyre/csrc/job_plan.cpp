@@ -136,6 +136,37 @@ void JobPlanStepCompute::write(std::ostream& os) const {
      << "\n";
 }
 
+// static
+std::vector<int64_t> JobPlanStepHostCompute::resolveSymbolicArgs(
+    const std::vector<at::Tensor>& tensors,
+    const std::vector<SymbolicArg>& symbolic_args) {
+  auto& allocator = SpyreAllocator::instance();
+  std::vector<int64_t> resolved(symbolic_args.size());
+  for (size_t i = 0; i < symbolic_args.size(); ++i) {
+    const SymbolicArg& arg = symbolic_args[i];
+    TORCH_CHECK(arg.tensor_id >= 0 &&
+                    static_cast<size_t>(arg.tensor_id) < tensors.size(),
+                "SymbolicArg[", i, "].tensor_id=", arg.tensor_id,
+                " out of range [0, ", tensors.size(), ")");
+    switch (arg.kind) {
+      case SymbolicArgKind::kAddress:
+        resolved[i] = static_cast<int64_t>(allocator.compositeAddressToDmva(
+            static_cast<SharedOwnerCtx*>(
+                tensors[arg.tensor_id].storage().data_ptr().get_context())
+                ->composite_addr));
+        break;
+      case SymbolicArgKind::kDimension:
+        TORCH_CHECK(false,
+                    "SymbolicArgKind::kDimension is not yet implemented ");
+        break;
+      default:
+        TORCH_CHECK(false, "Unknown SymbolicArgKind value: ",
+                    static_cast<int32_t>(arg.kind));
+    }
+  }
+  return resolved;
+}
+
 void JobPlanStepHostCompute::construct(LaunchContext& ctx,
                                        const SpyreStream& stream) const {
   // Helper lambda to build HostCallbackParams and launch on the stream.
@@ -175,47 +206,18 @@ void JobPlanStepHostCompute::construct(LaunchContext& ctx,
     return;
   }
 
-  // Case 3a: typed symbolic payload present — resolve each slot by kind.
+  // Typed symbolic payload present — resolve each slot by kind.
   if (!ctx.symbolic_args.empty()) {
-    auto& allocator = SpyreAllocator::instance();
+    std::vector<int64_t> resolved_addresses =
+        resolveSymbolicArgs(ctx.inputs_outputs, ctx.symbolic_args);
 
-    // Resolved symbolic addresses
-    std::vector<int64_t> resolved_addresses(ctx.symbolic_args.size());
-
-    // Resolve each symbolic arg
-    for (size_t i = 0; i < ctx.symbolic_args.size(); ++i) {
-      const SymbolicArg& arg = ctx.symbolic_args[i];
-
-      // Verify tensor id exists
-      TORCH_CHECK(arg.tensor_id >= 0 && static_cast<size_t>(arg.tensor_id) <
-                                            ctx.inputs_outputs.size(),
-                  "SymbolicArg[", i, "].tensor_id=", arg.tensor_id,
-                  " out of range [0, ", ctx.inputs_outputs.size(), ")");
-
-      switch (arg.kind) {
-        // Resolve each symbolic address using input and output tensors
-        case SymbolicArgKind::kAddress: {
-          resolved_addresses[i] =
-              static_cast<int64_t>(allocator.compositeAddressToDmva(
-                  static_cast<SharedOwnerCtx*>(ctx.inputs_outputs[arg.tensor_id]
-                                                   .storage()
-                                                   .data_ptr()
-                                                   .get_context())
-                      ->composite_addr));
-          break;
-        }
-        // Resolve each symbolic dimension
-        case SymbolicArgKind::kDimension: {
-          TORCH_CHECK(false,
-                      "SymbolicArgKind::kDimension is not yet implemented ");
-          break;
-        }
-        // Error - symbolic address kind unknown
-        default:
-          TORCH_CHECK(false, "Unknown SymbolicArgKind value: ",
-                      static_cast<int32_t>(arg.kind));
-      }
-    }
+    // Wrong symbolic_args count is an OOB read inside deeptools
+    // (DT_CHECK_MSG_OPT is compiled out by default).
+    TORCH_CHECK(
+        resolved_addresses.size() == hcm_->vdci.inputSym_.size(),
+        "symbolic_args count (", resolved_addresses.size(),
+        ") does not match compiled symbol count (",
+        hcm_->vdci.inputSym_.size(), ") for this host-compute step");
 
     launch_host_callback([this, resolved_addresses](void*) {
       deeptools::processComputeOnHostCommand(*hcm_, output_buffer_,

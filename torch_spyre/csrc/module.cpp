@@ -466,12 +466,13 @@ PYBIND11_MODULE(_C, m) {
       .value("kDimension", spyre::SymbolicArgKind::kDimension);
 
   py::class_<spyre::SymbolicArg>(m, "SymbolicArg")
-      .def(py::init([](spyre::SymbolicArgKind kind, int64_t value,
-                       int64_t tensor_id, int64_t dim_index) {
-             return spyre::SymbolicArg{kind, value, tensor_id, dim_index};
+      .def(py::init([](spyre::SymbolicArgKind kind, int64_t tensor_id,
+                       int64_t dim_index, int64_t value) {
+             return spyre::SymbolicArg{kind, tensor_id, dim_index, value};
            }),
-           py::arg("kind"), py::arg("value"), py::arg("tensor_id"),
-           py::arg("dim_index"))
+           py::arg("kind"), py::arg("tensor_id"),
+           py::arg("dim_index") = int64_t{-1},
+           py::arg("value") = int64_t{-1})
       .def_readwrite("kind", &spyre::SymbolicArg::kind)
       .def_readwrite("value", &spyre::SymbolicArg::value)
       .def_readwrite("tensor_id", &spyre::SymbolicArg::tensor_id)
@@ -507,9 +508,23 @@ PYBIND11_MODULE(_C, m) {
       "    job_plan: The JobPlan to execute\n"
       "    args: Sequence of input/output tensors\n"
       "    symbolic_args: Optional typed per-symbol payload. When non-empty,\n"
-      "        Case 3 of JobPlanStepHostCompute resolves each correction slot\n"
-      "        by kind rather than blindly iterating tensors. Empty (default)\n"
+      "        JobPlanStepHostCompute resolves each correction slot by kind\n"
+      "        rather than blindly iterating tensors. Empty (default)\n"
       "        preserves today's legacy behavior.");
+
+  // Test-only seam: exposes JobPlanStepHostCompute::resolveSymbolicArgs so
+  // that Python tests can assert on the ordered int64 vector that would be
+  // handed to deeptools, without needing a live HCM or device execution.
+  // The "_" prefix signals this is not part of the stable public API.
+  m.def(
+      "_resolve_symbolic_args",
+      &spyre::JobPlanStepHostCompute::resolveSymbolicArgs,
+      py::arg("tensors"), py::arg("symbolic_args"),
+      "Test-only: resolve a symbolic_args payload to a list of int64 DMVA "
+      "addresses.\n\n"
+      "Calls JobPlanStepHostCompute::resolveSymbolicArgs — the same function "
+      "used by the typed-payload resolution path at launch time — so the "
+      "result is identical to what would be passed to deeptools.");
 
   // Allocator statistics functions
   m.def(

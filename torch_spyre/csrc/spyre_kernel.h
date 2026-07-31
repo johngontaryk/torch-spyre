@@ -34,8 +34,6 @@ using json = nlohmann::json;
 
 namespace spyre {
 
-// Forward declarations
-class JobPlan;
 
 class SpyreStream;
 
@@ -49,6 +47,6 @@ void launchJobPlan(const JobPlan& job_plan, const std::vector<at::Tensor>& args,
 // is resolved exactly once here, at the public boundary, then threaded
 // explicitly into the launch path.
 void launchJobPlan(const JobPlan& job_plan, const std::vector<at::Tensor>& args,
-                   std::vector<SymbolicArg> symbolic_args = {});
+                   const std::vector<SymbolicArg> symbolic_args = {});
 
 }  // namespace spyre
