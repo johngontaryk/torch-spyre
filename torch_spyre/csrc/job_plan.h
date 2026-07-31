@@ -204,16 +204,17 @@ enum class SymbolicArgKind : int32_t {
  *
  * Fields:
  *   kind       – how to resolve the value.
- *   value      – reserved; not used by the current runtime consumer.
  *   tensor_id  – index into LaunchContext::inputs_outputs.
  *   dim_index  – for kDimension: which dimension of that tensor.
+ *                for kAddress:   unused (set to -1 by convention).
+ *   value      – for kDimension: the front-end-resolved concrete dimension size.
  *                for kAddress:   unused (set to -1 by convention).
  */
 struct SymbolicArg {
   SymbolicArgKind kind;
-  int64_t value;
   int64_t tensor_id;
-  int64_t dim_index;
+  int64_t dim_index = -1;
+  int64_t value     = -1;
 };
 
 /**
@@ -493,6 +494,25 @@ class JobPlanStepHostCompute final : public JobPlanStep {
   void construct(LaunchContext& ctx, const SpyreStream& stream) const override;
 
   void write(std::ostream& os) const override;
+
+  /**
+   * @brief Resolve a symbolic_args payload to a vector of int64 DMVA
+   * addresses.
+   *
+   * Extracted from the typed-payload resolution path in construct() so that
+   * the resolution logic has a single definition shared by both the hot path
+   * and the _C._resolve_symbolic_args test seam. Keeping it as a static
+   * member of this class makes the ownership clear without exposing it as a
+   * top-level public symbol.
+   *
+   * Preconditions (enforced via TORCH_CHECK):
+   *   - Every symbolic_args[i].tensor_id is a valid index into tensors.
+   *   - Every symbolic_args[i].kind is kAddress (kDimension not yet
+   *     implemented).
+   */
+  static std::vector<int64_t> resolveSymbolicArgs(
+      const std::vector<at::Tensor>& tensors,
+      const std::vector<SymbolicArg>& symbolic_args);
 
  private:
   std::unique_ptr<Hcm> hcm_;
