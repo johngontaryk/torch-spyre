@@ -207,14 +207,14 @@ enum class SymbolicArgKind : int32_t {
  *   tensor_id  – index into LaunchContext::inputs_outputs.
  *   dim_index  – for kDimension: which dimension of that tensor.
  *                for kAddress:   unused (set to -1 by convention).
- *   value      – for kDimension: the front-end-resolved concrete dimension size.
- *                for kAddress:   unused (set to -1 by convention).
+ *   value      – for kDimension: the front-end-resolved concrete dimension
+ * size. for kAddress:   unused (set to -1 by convention).
  */
 struct SymbolicArg {
   SymbolicArgKind kind;
   int64_t tensor_id;
   int64_t dim_index = -1;
-  int64_t value     = -1;
+  int64_t value = -1;
 };
 
 /**

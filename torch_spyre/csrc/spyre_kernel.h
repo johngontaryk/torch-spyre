@@ -34,7 +34,6 @@ using json = nlohmann::json;
 
 namespace spyre {
 
-
 class SpyreStream;
 
 // Launch a JobPlan on an explicit stream. The whole plan is submitted to this
