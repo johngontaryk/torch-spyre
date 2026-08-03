@@ -183,10 +183,10 @@ class HostBuffer {
  * kAddress  – the slot carries the HBM device address of a tensor.
  *             value is resolved via compositeAddressToDmva() on
  *             inputs_outputs[tensor_id].
- * kDimension – the slot carries a runtime tensor dimension size.
- *             Resolution (inputs_outputs[tensor_id].size(dim_index)) is
- *             reserved for a follow-up issue; the consumer will
- *             TORCH_CHECK-fail on this kind until it is implemented.
+ * kDimension – the slot carries a runtime tensor dimension size,
+ *             resolved by the frontend and stored in SymbolicArg::value.
+ *             The consumer will TORCH_CHECK-fail on this kind until it
+ *             is implemented.
  */
 enum class SymbolicArgKind : int32_t {
   kAddress = 0,
@@ -497,8 +497,11 @@ class JobPlanStepHostCompute final : public JobPlanStep {
   void write(std::ostream& os) const override;
 
   /**
-   * @brief Resolve a symbolic_args payload to a vector of int64 DMVA
-   * addresses.
+   * @brief Resolve a symbolic_args payload to a vector of int64 values.
+   *
+   * Each entry is resolved according to its kind: kAddress entries yield the
+   * HBM device address of the corresponding tensor; kDimension entries yield
+   * the pre-resolved dimension size stored in SymbolicArg::value.
    *
    * Extracted from the typed-payload resolution path in construct() so that
    * the resolution logic has a single definition shared by both the hot path

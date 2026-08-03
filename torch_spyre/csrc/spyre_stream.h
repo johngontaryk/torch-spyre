@@ -28,9 +28,6 @@
 
 namespace spyre {
 
-// Forward declaration (full definition in job_plan.h)
-struct JobPlan;
-
 class SpyreStream {
  private:
   c10::Stream stream_;
