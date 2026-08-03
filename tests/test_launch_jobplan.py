@@ -241,6 +241,8 @@ class TestD2HFromTensorSegment(TestCase):
             out = torch.zeros(128, dtype=torch.float16, device="spyre")
             with pytest.raises(RuntimeError, match="D2H transfer out of bounds"):
                 torch_spyre._C.launch_jobplan(job_plan, [inp, out])
+
+
 class TestSymbolicArg(TestCase):
     """
     Unit tests for the SymbolicArg typed payload.
@@ -278,9 +280,7 @@ class TestSymbolicArg(TestCase):
                 with pytest.raises(
                     RuntimeError, match="kDimension is not yet implemented"
                 ):
-                    torch_spyre._C.launch_jobplan(
-                        job_plan, [t], symbolic_args=payload
-                    )
+                    torch_spyre._C.launch_jobplan(job_plan, [t], symbolic_args=payload)
 
     def test_symbolic_arg_attributes_and_repr_roundtrip(self):
         """SymbolicArg fields and repr survive pybind construction.
@@ -333,10 +333,7 @@ class TestSymbolicArg(TestCase):
             stream = torch.Stream("spyre")
             with stream:
                 with pytest.raises(RuntimeError, match="tensor_id=5 out of range"):
-                    torch_spyre._C.launch_jobplan(
-                        job_plan, [t], symbolic_args=payload
-                    )
-
+                    torch_spyre._C.launch_jobplan(job_plan, [t], symbolic_args=payload)
 
     def test_kaddress_ordering_forward_and_reversed_differ(self):
         """Forward and reversed payloads over two tensors produce different
