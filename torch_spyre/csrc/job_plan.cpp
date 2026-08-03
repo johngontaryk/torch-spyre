@@ -136,7 +136,6 @@ void JobPlanStepCompute::write(std::ostream& os) const {
      << "\n";
 }
 
-// static
 std::vector<int64_t> JobPlanStepHostCompute::resolveSymbolicArgs(
     const std::vector<at::Tensor>& tensors,
     const std::vector<SymbolicArg>& symbolic_args) {
@@ -213,11 +212,10 @@ void JobPlanStepHostCompute::construct(LaunchContext& ctx,
 
     // Wrong symbolic_args count is an OOB read inside deeptools
     // (DT_CHECK_MSG_OPT is compiled out by default).
-    TORCH_CHECK(
-        resolved_addresses.size() == hcm_->vdci.inputSym_.size(),
-        "symbolic_args count (", resolved_addresses.size(),
-        ") does not match compiled symbol count (",
-        hcm_->vdci.inputSym_.size(), ") for this host-compute step");
+    TORCH_CHECK(resolved_addresses.size() == hcm_->vdci.inputSym_.size(),
+                "symbolic_args count (", resolved_addresses.size(),
+                ") does not match compiled symbol count (",
+                hcm_->vdci.inputSym_.size(), ") for this host-compute step");
 
     launch_host_callback([this, resolved_addresses](void*) {
       deeptools::processComputeOnHostCommand(*hcm_, output_buffer_,
