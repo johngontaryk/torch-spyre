@@ -23,6 +23,7 @@
 
 #include "job_plan.h"
 #include "module.h"
+#include "spyre_error.h"
 #include "spyre_kernel.h"
 
 namespace spyre {
@@ -69,6 +70,10 @@ class SpyreStream {
 
   // Conversions
   c10::Stream unwrap() const;
+
+  // Returns the error state of this stream without exposing the underlying
+  // flex::RuntimeStream handle to callers.
+  SpyreStreamError getError() const;
 
  private:
   flex::RuntimeStream* resolveRuntimeHandle() const;
