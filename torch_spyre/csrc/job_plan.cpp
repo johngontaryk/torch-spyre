@@ -156,7 +156,7 @@ std::vector<int64_t> JobPlanStepHostCompute::resolveSymbolicArgs(
         break;
       case SymbolicArgKind::kDimension:
         TORCH_CHECK(false,
-                    "SymbolicArgKind::kDimension is not yet implemented ");
+                    "SymbolicArgKind::kDimension is not yet implemented. ");
         break;
       default:
         TORCH_CHECK(false, "Unknown SymbolicArgKind value: ",
