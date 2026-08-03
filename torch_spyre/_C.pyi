@@ -353,9 +353,9 @@ class SymbolicArg:
     def __init__(
         self,
         kind: SymbolicArgKind,
-        value: int,
-        tensor_id: int = 0,
-        dim_index: int = 0,
+        tensor_id: int,
+        dim_index: int = -1,
+        value: int = -1,
     ) -> None: ...
     def __repr__(self) -> str: ...
 

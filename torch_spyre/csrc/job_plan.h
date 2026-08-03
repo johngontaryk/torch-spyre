@@ -208,7 +208,8 @@ enum class SymbolicArgKind : int32_t {
  *   dim_index  – for kDimension: which dimension of that tensor.
  *                for kAddress:   unused (set to -1 by convention).
  *   value      – for kDimension: the front-end-resolved concrete dimension
- * size. for kAddress:   unused (set to -1 by convention).
+ *                size. for kAddress:   unused (set to -1 by convention).
+ *
  */
 struct SymbolicArg {
   SymbolicArgKind kind;
