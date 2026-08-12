@@ -351,7 +351,15 @@ def spyre_gelu(
 def spyre_softplus(
     input: torch.Tensor, beta: float = 1.0, threshold: float = 20.0
 ) -> torch.Tensor:
-    return torch.ops.spyre.softplus(input, beta, threshold)
+    if beta == 1.0:
+        return torch.ops.spyre.softplus(input, beta, threshold)
+    # The runtime primitive drops the outer 1/beta factor, so beta == 1 is its
+    # only exact path. Scale into it and back out; the threshold branch stays
+    # exact because 1 * (beta * x) > threshold is PyTorch's beta * x > threshold.
+    # aten accepts beta == 0 and saturates every element to +-inf, so take the
+    # reciprocal under IEEE rules rather than letting Python raise here.
+    inv_beta = math.copysign(math.inf, beta) if beta == 0.0 else 1.0 / beta
+    return torch.ops.spyre.softplus(input * beta, 1.0, threshold) * inv_beta
 
 
 @register_spyre_decompositions([torch.ops.aten.linear.default])
@@ -998,28 +1006,44 @@ def _masked_scatter_reject_reason(
 ) -> Optional[str]:
     """Why ``masked_scatter`` cannot use the row-level path here, or ``None`` if it can.
 
-    Checks are ordered from cheapest/most general to most specific:
+    The mask must select whole rows: constant across the last (column) dim, with
+    every other dim matching ``self`` so there is exactly one mask bool per row.
+    That covers both spellings PyTorch may hand us for a row-broadcast mask, which
+    the body collapses identically via ``mask[..., 0]``:
+      * un-expanded -- the last dim is literally ``1`` (e.g. ``[B, S, 1]``); or
+      * expanded    -- the last dim is ``cols`` but broadcast (``stride(-1) == 0``).
+
+    Checks are ordered cheapest/most-general to most-specific:
       1. Rank guards (no device_layout access needed).
-      2. Exact shape equality (subsumes individual last-dim checks).
+      2. Leading-dim equality (one mask entry per row).
       3. Degenerate column guard (cols <= 1 is not a meaningful row).
       4. Source column alignment.
-      5. Broadcast-stride check (the structural row-level requirement).
+      5. Per-row last-dim check (the structural row-level requirement).
     """
     if self.dim() < 2 or source.dim() < 2 or mask.dim() != self.dim():
         return f"rank: self={self.dim()} mask={mask.dim()} source={source.dim()}"
-    # Shape equality subsumes last-dim equality; check it first so the error
-    # message names the full shape rather than just one dimension.
-    if tuple(mask.shape) != tuple(self.shape):
-        return f"mask shape {tuple(mask.shape)} != self {tuple(self.shape)}"
+    # One mask entry per row: every dim but the last must match self exactly, so
+    # mask[..., 0] has exactly `rows` elements. (The last dim may differ: it is
+    # either a literal 1 or a broadcast of cols -- checked below.)
+    if tuple(mask.shape[:-1]) != tuple(self.shape[:-1]):
+        return (
+            f"mask leading dims {tuple(mask.shape[:-1])} != self "
+            f"{tuple(self.shape[:-1])}"
+        )
     cols = self.shape[-1]
     # cols <= 1 is a degenerate row that offers no block-per-row equivalence.
     if cols <= 1:
         return f"degenerate last dim: cols={cols}"
     if source.shape[-1] != cols:
         return f"source last dim {source.shape[-1]} != self last dim {cols}"
-    # stride(-1) == 0 is what makes the mask per-row rather than per-element.
-    if mask.stride(-1) != 0:
-        return f"mask is not broadcast in its last dim (stride {mask.stride()})"
+    # Per-row means the mask is constant across the last dim. Accept a literal
+    # size-1 last dim (un-expanded) or a broadcast last dim (stride 0); reject a
+    # genuinely per-element mask (last dim cols with a non-zero stride).
+    if mask.shape[-1] != 1 and mask.stride(-1) != 0:
+        return (
+            f"mask is not per-row in its last dim (shape {tuple(mask.shape)}, "
+            f"stride {tuple(mask.stride())})"
+        )
     return None
 
 
