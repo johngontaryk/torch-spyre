@@ -6060,6 +6060,48 @@ class TestGenerateBundleMlirSymbolicArgs(unittest.TestCase):
         # First sdsc_execute uses first two extracted names
         self.assertIn("sdscbundle.sdsc_execute (%arg_0, %arg_1)", mlir)
 
+    def test_returned_symbol_kinds_match_input_arg_order(self):
+        """generate_bundle returns SymbolKind list matching input_arg<index> signature order."""
+        # op_b uses arg_index=2, op_a uses arg_index=0
+        op_b = self._make_op_spec_with_hbm_args("b", [2])
+        op_a = self._make_op_spec_with_hbm_args("a", [0])
+
+        call_count = [0]
+        arg_indices = [2, 0]
+
+        def fake(idx, op_spec, symbols, symbol_id_offset=0, use_symbols=False):
+            i = call_count[0]
+            call_count[0] += 1
+            ai = arg_indices[i]
+            addr = 0x400000000 * (ai + 1)
+            sym_id = -(symbol_id_offset + 1)
+            symbols.append(addr)
+            return _make_tiled_json(idx, sym_id), [addr], [{}], [SymbolKind.kernel(ai)]
+
+        with patch(
+            "torch_spyre._inductor.codegen.bundle.compile_op_spec",
+            side_effect=fake,
+        ):
+            symbol_kinds = generate_bundle(
+                "test_kernel",
+                self.tmpdir,
+                [op_b, op_a],
+                use_symbols=True,
+            )
+
+        # Returned list must be sorted by arg_index: [SymbolKind.kernel(0), SymbolKind.kernel(2)]
+        self.assertEqual(len(symbol_kinds), 2)
+        self.assertEqual(symbol_kinds[0].arg_index, 0)
+        self.assertEqual(symbol_kinds[1].arg_index, 2)
+        self.assertEqual([sk.arg_index for sk in symbol_kinds], [0, 2])
+
+        # Verify against emitted MLIR function signature order
+        mlir = _read_mlir(self.tmpdir)
+        self.assertIn(
+            "func.func @sdsc_bundle(%arg_0_base_addr: !sdscbundle.input_arg<index>, %arg_2_base_addr: !sdscbundle.input_arg<index>)",
+            mlir,
+        )
+
     def test_same_kernel_arg_across_sdsc_deduped(self):
         """The same kernel arg address appearing in two SDSCs maps to one input_arg param."""
         # Simulates softmax: arg_index=0 appears in both op0 and op1.

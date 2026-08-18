@@ -58,7 +58,7 @@ def generate_bundle(
     output_dir: str,
     specs: Sequence,
     use_symbols: bool | None = None,
-):
+) -> list[SymbolKind]:
     """Output the SDSC Bundle for the OpSpecs in output_dir.
 
     ``specs`` is a list of ``OpSpec | LoopSpec`` entries (nested ``LoopSpec``
@@ -69,9 +69,21 @@ def generate_bundle(
     When ``None`` (the default) the value is
     read from ``config.bundle_symbolic_args``.
 
-     Dimension symbols (from ``mark_dynamic``) always produce
+    Dimension symbols (from ``mark_dynamic``) always produce
     ``!sdscbundle.input_arg<index, granularity=G, max_value=M>`` parameters
     independent of ``use_symbols``.
+
+    Returns:
+        One ``SymbolKind`` per unique kernel tensor arg (``kind == "kernel"``),
+        sorted by ``arg_index`` — the same order as the ``input_arg`` address
+        parameters in the emitted MLIR function signature.  ``dxp_standalone``
+        stores those parameters positionally in ``inputSym_``, so
+        ``symbolic_args[i]`` at run time must describe ``inputSym_[i]``.
+
+        Pool and dimension symbols are not included.  When the dimension
+        issue lands this will be extended to cover those slots too.
+
+        Empty when ``use_symbols`` is ``False``.
     """
     if use_symbols is None:
         use_symbols = _spyre_config.bundle_symbolic_args
@@ -405,6 +417,11 @@ def generate_bundle(
         f.write("\t\treturn\n")
         f.write("\t}\n")
         f.write("}\n")
+
+    # One SymbolKind per address input_arg parameter, sorted by arg_index —
+    # matching the MLIR function signature order and therefore inputSym_ order.
+    # Dimension symbols excluded until kDimension is implemented.
+    return [symbol_kinds[i] for i in kernel_arg_sym_indices]
 
 
 # ---------------------------------------------------------------------------

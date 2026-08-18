@@ -1312,6 +1312,26 @@ class SpyreKernel(Kernel[CSEVariable]):
                 seen.add(arg)
                 call_args.append(arg)
 
+        # Build symbolic_args when on the symbolic path.
+        # One SymbolicArg(kAddress) per unique kernel tensor arg, sorted by
+        # arg_index — matching the inputSym_ slot order that generate_bundle()
+        # writes into the MLIR function signature.
+        # pool_offset accounts for _pool occupying call_args[0] when present:
+        # arg_index is numbered among real tensors only, so tensor_id =
+        # arg_index + pool_offset gives its position in run()'s *args.
+        # Dedup by arg_index: an in-place tensor appears in spyre_kernel_args
+        # twice (input + output) but maps to one MLIR input_arg parameter.
+        if _spyre_config.bundle_symbolic_args:
+            pool_offset = 1 if self._kernel_uses_hbm_pool() else 0
+            unique_arg_indices = sorted(
+                {tensor_arg.arg_index for _, tensor_arg in self.spyre_kernel_args}
+            )
+            sym_args_str = ", ".join(
+                f"SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id={arg_index + pool_offset})"
+                for arg_index in unique_arg_indices
+            )
+            call_args.append(f"symbolic_args=[{sym_args_str}]")
+
         call_args_str = ", ".join(call_args)
         wrapper.writeline(f"{name}.run({call_args_str})")
         if uses_pool:
