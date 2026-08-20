@@ -1344,17 +1344,26 @@ class SpyreKernel(Kernel[CSEVariable]):
         # One SymbolicArg(kAddress) per unique kernel tensor arg, sorted by
         # arg_index — matching the inputSym_ slot order that generate_bundle()
         # writes into the MLIR function signature.
-        # Dedup by arg_index: an in-place tensor appears in spyre_kernel_args
-        # twice (input + output) but maps to one MLIR input_arg parameter.
         if _spyre_config.bundle_symbolic_args:
-            unique_arg_indices = sorted(
-                {tensor_arg.arg_index for _, tensor_arg in self.spyre_kernel_args}
-            )
-            sym_args_str = ", ".join(
-                f"SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id={arg_index})"
-                for arg_index in unique_arg_indices
-            )
-            call_args.append(f"symbolic_args=[{sym_args_str}]")
+            # Map each buffer name to its position in the call_args list that
+            # run() actually receives. This is the correct tensor_id: arg_index
+            # comes from actuals.index(name) on the pre-dedup list and overshoots
+            # when in-place duplicates are removed by the seen-set above.
+            call_args_map = {arg_name: i for i, arg_name in enumerate(call_args)}
+            seen_arg_indices = set()
+            symbolic_args = []
+            # Sort by arg_index to match the input_arg<index> signature order
+            # that generate_bundle() emits.
+            for arg_name, tensor_arg in sorted(
+                self.spyre_kernel_args, key=lambda x: x[1].arg_index
+            ):
+                arg_index = tensor_arg.arg_index
+                if arg_index not in seen_arg_indices:
+                    seen_arg_indices.add(arg_index)
+                    symbolic_args.append(
+                        f"SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id={call_args_map[arg_name]})"
+                    )
+            call_args.append(f"symbolic_args=[{', '.join(symbolic_args)}]")
 
         call_args_str = ", ".join(call_args)
         wrapper.writeline(f"{name}.run({call_args_str})")
