@@ -6254,7 +6254,7 @@ class TestGenerateBundleMlirSymbolicArgs(unittest.TestCase):
         call_count = [0]
         arg_indices = [2, 0]
 
-        def fake(idx, op_spec, symbols, symbol_id_offset=0, use_symbols=False):
+        def fake(idx, op_spec, symbols, symbol_id_offset=0):
             i = call_count[0]
             call_count[0] += 1
             ai = arg_indices[i]
@@ -6271,7 +6271,6 @@ class TestGenerateBundleMlirSymbolicArgs(unittest.TestCase):
                 "test_kernel",
                 self.tmpdir,
                 [op_b, op_a],
-                use_symbols=True,
             )
 
         # Returned list must be sorted by arg_index: [SymbolKind.kernel(0), SymbolKind.kernel(2)]
