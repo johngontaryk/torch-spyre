@@ -66,7 +66,7 @@ def generate_bundle(
     output_dir: str,
     specs: Sequence,
     pool_size: int = 0,
-):
+) -> list[SymbolKind]:
     """Output the SDSC Bundle for the OpSpecs in output_dir.
 
     ``specs`` is a list of ``OpSpec | LoopSpec`` entries (nested ``LoopSpec``
@@ -471,6 +471,11 @@ def generate_bundle(
         bundle_path = os.path.join(output_dir, "bundle.mlir")
         with open(bundle_path, "r") as bf:
             sdsc_log.info("BUNDLE MLIR [bundle.mlir]\n%s", bf.read())
+
+    # One SymbolKind per address input_arg parameter, sorted by arg_index —
+    # matching the MLIR function signature order and therefore inputSym_ order.
+    # Dimension symbols excluded until kDimension is implemented.
+    return [symbol_kinds[i] for i in kernel_arg_sym_indices]
 
 
 # ---------------------------------------------------------------------------

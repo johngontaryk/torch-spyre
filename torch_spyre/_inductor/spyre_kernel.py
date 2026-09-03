@@ -1299,8 +1299,18 @@ class SpyreKernel(Kernel[CSEVariable]):
         actuals = self.args.python_argdefs()[1]
         has_pool_allocations = self.pool_size > 0
 
+        # Build the deduplicated arg list in the same order call_kernel uses, so
+        # arg_index reflects the runtime positional index in .run()'s *args.
+        # actuals.index(name) on the full list would give a higher index than the
+        # real runtime position whenever an earlier duplicate is dropped by
+        # call_kernel's deduplication, causing tensor_id out-of-range at launch.
+        seen_dedup: dict[str, int] = {}
+        for arg in actuals:
+            if arg not in seen_dedup:
+                seen_dedup[arg] = len(seen_dedup)
+
         for name, tensor_arg in self.spyre_kernel_args:
-            tensor_arg.arg_index = actuals.index(name)
+            tensor_arg.arg_index = seen_dedup[name]
             if _spyre_config.bundle_symbolic_args:
                 # On the symbolic path the HBM address is provided at runtime
                 # via input_arg_extract; start_address is never used as a

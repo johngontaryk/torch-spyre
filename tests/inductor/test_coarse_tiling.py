@@ -6800,6 +6800,99 @@ class TestGenerateBundleMlirSymbolicArgs(unittest.TestCase):
         # First sdsc_execute uses first two extracted names
         self.assertIn("sdscbundle.sdsc_execute (%arg_0, %arg_1)", mlir)
 
+    def test_returned_symbol_kinds_match_input_arg_order(self):
+        """generate_bundle returns SymbolKind list matching input_arg<index> signature order."""
+        # op_b uses arg_index=2, op_a uses arg_index=0
+        op_b = self._make_op_spec_with_hbm_args("b", [2])
+        op_a = self._make_op_spec_with_hbm_args("a", [0])
+
+        arg_map = {"b": 2, "a": 0}
+
+        def fake(idx, op_spec, symbols, symbol_id_offset=0):
+            ai = arg_map[op_spec.op]
+            addr = 0x400000000 * (ai + 1)
+            sym_id = -(symbol_id_offset + 1)
+            symbols.append(addr)
+            return _make_tiled_json(idx, sym_id), [addr], [{}], [SymbolKind.kernel(ai)]
+
+        with patch(
+            "torch_spyre._inductor.codegen.bundle.compile_op_spec",
+            side_effect=fake,
+        ):
+            symbol_kinds = generate_bundle(
+                "test_kernel",
+                self.tmpdir,
+                [op_b, op_a],
+            )
+
+        # Returned list must be sorted by arg_index: [SymbolKind.kernel(0), SymbolKind.kernel(2)]
+        self.assertEqual(len(symbol_kinds), 2)
+        self.assertEqual(symbol_kinds[0].arg_index, 0)
+        self.assertEqual(symbol_kinds[1].arg_index, 2)
+        self.assertEqual([sk.arg_index for sk in symbol_kinds], [0, 2])
+
+        # Verify against emitted MLIR function signature order
+        mlir = _read_mlir(self.tmpdir)
+        self.assertIn(
+            "func.func @sdsc_bundle(%arg_0_base_addr: !sdscbundle.input_arg<index>, %arg_2_base_addr: !sdscbundle.input_arg<index>)",
+            mlir,
+        )
+
+    def test_symbol_kinds_positionally_equal_to_mlir_input_arg_order(self):
+        """symbol_kinds[i].arg_index equals the i-th input_arg parameter index
+        in the emitted MLIR signature slot-for-slot.
+
+        This pins the invariant a wrong-order/right-count bug would silently
+        violate: the returned SymbolKind list must match the MLIR parameter
+        order positionally, which is the same order dxp_standalone stores in
+        inputSym_.
+        """
+        import regex as re
+
+        # Three specs with arg_indices 2, 0, 1 — deliberately out of order.
+        op_c = self._make_op_spec_with_hbm_args("c", [2])
+        op_a = self._make_op_spec_with_hbm_args("a", [0])
+        op_b = self._make_op_spec_with_hbm_args("b", [1])
+
+        arg_map = {"c": 2, "a": 0, "b": 1}
+
+        def fake(idx, op_spec, symbols, symbol_id_offset=0):
+            ai = arg_map[op_spec.op]
+            addr = 0x400000000 * (ai + 1)
+            sym_id = -(symbol_id_offset + 1)
+            symbols.append(addr)
+            return _make_tiled_json(idx, sym_id), [addr], [{}], [SymbolKind.kernel(ai)]
+
+        with patch(
+            "torch_spyre._inductor.codegen.bundle.compile_op_spec",
+            side_effect=fake,
+        ):
+            symbol_kinds = generate_bundle(
+                "test_kernel",
+                self.tmpdir,
+                [op_c, op_a, op_b],
+            )
+
+        returned_arg_indices = [sk.arg_index for sk in symbol_kinds]
+        # generate_bundle sorts by arg_index ascending.
+        self.assertEqual(returned_arg_indices, [0, 1, 2])
+
+        # Parse the MLIR signature to get the input_arg parameter order.
+        mlir = _read_mlir(self.tmpdir)
+        sig_match = re.search(r"func\.func @sdsc_bundle\(([^)]*)\)", mlir, re.DOTALL)
+        self.assertIsNotNone(sig_match, "No @sdsc_bundle signature in MLIR")
+        mlir_arg_indices = [
+            int(m) for m in re.findall(r"%arg_(\d+)_base_addr", sig_match.group(1))
+        ]
+
+        # Positional equality: slot i of symbol_kinds matches slot i of the
+        # MLIR signature — the invariant inputSym_[i] depends on.
+        self.assertEqual(
+            returned_arg_indices,
+            mlir_arg_indices,
+            "generate_bundle() return order does not match MLIR input_arg order",
+        )
+
     def test_same_kernel_arg_across_sdsc_deduped(self):
         """The same kernel arg address appearing in two SDSCs maps to one input_arg param."""
         # Simulates softmax: arg_index=0 appears in both op0 and op1.
