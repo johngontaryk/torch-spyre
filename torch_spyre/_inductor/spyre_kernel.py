@@ -1255,6 +1255,21 @@ class SpyreKernel(Kernel[CSEVariable]):
         body = self.op_specs
         self.op_specs = [LoopSpec(count=count, body=body)]
 
+    def _deduped_actuals(self) -> list[str]:
+        """Return the deduplicated list of tensor argument names in the order
+        they are passed to .run() at runtime.
+
+        self.args.python_argdefs()[1] may contain duplicate names when the same
+        tensor appears as both input and output (e.g. in-place ops). call_kernel
+        drops duplicates when building the .run() call, so arg_index assignments
+        in codegen_kernel must use the same deduplicated order. Keeping the logic
+        here ensures both methods can never drift apart.
+        """
+        seen: dict[str, None] = {}
+        for arg in self.args.python_argdefs()[1]:
+            seen[arg] = None
+        return list(seen)
+
     def codegen_kernel(self):
         """Codegen the body of this kernel by pretty printing its list of OpSpecs"""
 
@@ -1295,22 +1310,16 @@ class SpyreKernel(Kernel[CSEVariable]):
                 return f"IndirectAccess('{name_sym}')"
             return "sympify('" + str(x) + "')"
 
-        # Now that all loads/stores have been processed we know the final kernel_args and can map names to indices
-        actuals = self.args.python_argdefs()[1]
+        # Now that all loads/stores have been processed we know the final
+        # kernel_args and can map names to indices.
         has_pool_allocations = self.pool_size > 0
 
-        # Build the deduplicated arg list in the same order call_kernel uses, so
-        # arg_index reflects the runtime positional index in .run()'s *args.
-        # actuals.index(name) on the full list would give a higher index than the
-        # real runtime position whenever an earlier duplicate is dropped by
-        # call_kernel's deduplication, causing tensor_id out-of-range at launch.
-        seen_dedup: dict[str, int] = {}
-        for arg in actuals:
-            if arg not in seen_dedup:
-                seen_dedup[arg] = len(seen_dedup)
+        # _deduped_actuals() gives the same positional order that call_kernel
+        # uses when building the .run() call
+        deduped_actuals = {name: i for i, name in enumerate(self._deduped_actuals())}
 
         for name, tensor_arg in self.spyre_kernel_args:
-            tensor_arg.arg_index = seen_dedup[name]
+            tensor_arg.arg_index = deduped_actuals[name]
             if _spyre_config.bundle_symbolic_args:
                 # On the symbolic path the HBM address is provided at runtime
                 # via input_arg_extract; start_address is never used as a
@@ -1380,11 +1389,8 @@ class SpyreKernel(Kernel[CSEVariable]):
         # !sdscbundle.input_arg<index> per unique arg_index; passing the
         # same tensor twice would cause a runtime "Number of inputs
         # mismatches" error in processComputeOnHostCommand.
-        seen: set[str] = set()
-        for arg in self.args.python_argdefs()[1]:
-            if arg not in seen:
-                seen.add(arg)
-                call_args.append(arg)
+        for arg in self._deduped_actuals():
+            call_args.append(arg)
 
         call_args_str = ", ".join(call_args)
         wrapper.writeline(f"{name}.run({call_args_str})")

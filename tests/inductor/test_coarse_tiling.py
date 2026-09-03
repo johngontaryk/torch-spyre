@@ -6893,6 +6893,83 @@ class TestGenerateBundleMlirSymbolicArgs(unittest.TestCase):
             "generate_bundle() return order does not match MLIR input_arg order",
         )
 
+    def test_pool_param_prepended_to_returned_symbol_kinds(self):
+        """When frontend_pool_allocation=True and a pool symbol is present,
+        generate_bundle() prepends a pool SymbolKind at index 0 of the returned
+        list, matching the %pool_base_addr input_arg<0> slot in the MLIR signature.
+
+        This is the regression test for the off-by-one crash:
+            symbolic_args count (N) does not match compiled symbol count (N+1)
+        which occurred because the pool input_arg slot was emitted in the MLIR
+        signature but absent from the returned SymbolKind list.
+        """
+        op_a = self._make_op_spec_with_hbm_args("a", [0])
+        op_pool = OpSpec(
+            op="pool_op",
+            is_reduction=False,
+            iteration_space={Symbol("c0"): (Integer(128), 1)},
+            args=[
+                TensorArg(
+                    is_input=True,
+                    arg_index=-1,
+                    device_dtype=_FP16,
+                    device_size=[2, 64],
+                    device_coordinates=[Integer(0), Symbol("c0")],
+                    allocation={"hbm_pool": 0x0},
+                )
+            ],
+            op_info={},
+        )
+        call_count = [0]
+        values = [0x400000000, 0x0]
+
+        def fake(idx, op_spec, symbols, symbol_id_offset=0):
+            i = call_count[0]
+            call_count[0] += 1
+            sym_id = -(symbol_id_offset + 1)
+            symbols.append(values[i])
+            kind = SymbolKind.kernel(0) if i == 0 else SymbolKind.pool()
+            return _make_tiled_json(idx, sym_id), [values[i]], [{}], [kind]
+
+        with (
+            config.patch({"sdsc_cache": False}),
+            patch(
+                "torch_spyre._inductor.codegen.bundle.compile_op_spec",
+                side_effect=fake,
+            ),
+            patch(
+                "torch_spyre._inductor.codegen.bundle._spyre_config.frontend_pool_allocation",
+                True,
+            ),
+        ):
+            symbol_kinds = generate_bundle(
+                "test_kernel",
+                self.tmpdir,
+                [op_a, op_pool],
+                pool_size=1024,
+            )
+
+        # Pool SymbolKind must be first — matching input_arg<0> = %pool_base_addr.
+        self.assertGreaterEqual(len(symbol_kinds), 1)
+        self.assertTrue(symbol_kinds[0].is_pool, "Expected pool SymbolKind at index 0")
+
+        # Kernel tensor SymbolKind follows at index 1.
+        self.assertEqual(len(symbol_kinds), 2)
+        self.assertEqual(symbol_kinds[1].arg_index, 0)
+
+        # MLIR signature must have pool param first, then kernel tensor param.
+        mlir = _read_mlir(self.tmpdir)
+        self.assertIn("%pool_base_addr: !sdscbundle.input_arg<index>", mlir)
+        self.assertIn("%arg_0_base_addr: !sdscbundle.input_arg<index>", mlir)
+        sig_start = mlir.index("func.func @sdsc_bundle(")
+        pool_pos = mlir.index("%pool_base_addr", sig_start)
+        arg0_pos = mlir.index("%arg_0_base_addr", sig_start)
+        self.assertLess(
+            pool_pos,
+            arg0_pos,
+            "%pool_base_addr must precede %arg_0_base_addr in signature",
+        )
+
     def test_same_kernel_arg_across_sdsc_deduped(self):
         """The same kernel arg address appearing in two SDSCs maps to one input_arg param."""
         # Simulates softmax: arg_index=0 appears in both op0 and op1.

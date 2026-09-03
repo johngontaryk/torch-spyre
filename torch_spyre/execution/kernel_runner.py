@@ -92,11 +92,33 @@ class SpyreSDSCKernelRunner:
         with torch.profiler.record_function(f"launch_jobplan:{self.kernel_name}"):
             if _spyre_config.bundle_symbolic_args and self.symbol_kinds:
                 # Build the SymbolicArg payload from the canonical symbol order
-                # that generate_bundle() returned and stored on this runner
-                symbolic_args = [
-                    SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=sk.arg_index)
-                    for sk in self.symbol_kinds
-                ]
+                # that generate_bundle() returned and stored on this runner.
+                # symbol_kinds matches the MLIR input_arg slot order: pool first
+                # (when frontend_pool_allocation is active), then kernel tensor
+                # args in arg_index order.
+                if self.symbol_kinds[0].is_pool:
+                    # call_kernel prepends the pool tensor to args, so it sits
+                    # at args[0]. Kernel tensor arg_indices are 0-based among
+                    # kernel tensors only, so add 1 to account for the pool.
+                    symbolic_args = (
+                        [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0)]
+                    ) + (
+                        [
+                            SymbolicArg(
+                                kind=SymbolicArgKind.kAddress,
+                                tensor_id=sk.arg_index + 1,
+                            )
+                            for sk in self.symbol_kinds[1:]
+                        ]
+                    )
+                else:
+                    # No pool param — arg_index maps directly to args position.
+                    symbolic_args = [
+                        SymbolicArg(
+                            kind=SymbolicArgKind.kAddress, tensor_id=sk.arg_index
+                        )
+                        for sk in self.symbol_kinds
+                    ]
                 launch_jobplan(self.jobplan, args, symbolic_args)
             else:
                 launch_jobplan(self.jobplan, args)
