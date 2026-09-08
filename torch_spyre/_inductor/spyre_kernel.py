@@ -287,6 +287,19 @@ class SpyreOpFuncs:
         return PointwiseOp("qfp8wt", [x])
 
     @staticmethod
+    def quantscalepertokenfp8(x, scale_ub):
+        # scale_ub must remain in the signature: Inductor dispatches this method via
+        # SpyreKernelOpsHandler._default(name, args, kwargs) passing all op arguments,
+        # so dropping it would cause a TypeError at codegen time.
+        #
+        # It is intentionally unused here: scale_ub is already baked into `mulConst`
+        # inside SpyreReduction.op_info at lowering time (lower_quantscalepertokenfp8).
+        # For reductions, kernel_store_reduction reads op_info exclusively from
+        # ir_node.data.op_info (the SpyreReduction), not from ReductionOp.op_info.
+        _ = scale_ub
+        return ReductionOp("quantscalepertokenfp8", [x])
+
+    @staticmethod
     def relu(x):
         return PointwiseOp("relufwd", [x])
 
@@ -515,6 +528,10 @@ class SpyreKernel(Kernel[CSEVariable]):
         self._alignment_access_by_tensor_arg: dict[int, AlignmentAccess] = {}
         self._alignment_inputs_by_spec: dict[int, AlignmentInputs] = {}
         self.pool_size: int = pool_size
+        # Live call args, deduped and filtered to names in spyre_kernel_args.
+        # Set by codegen_kernel(); used by call_kernel() to ensure arg_index
+        # values match .run() positional args.
+        self._live_call_arg_names: list[str] | None = None
 
     def indirect_var_names(self) -> "frozenset[str] | None":
         if not self.indirect_vars:
@@ -1255,21 +1272,6 @@ class SpyreKernel(Kernel[CSEVariable]):
         body = self.op_specs
         self.op_specs = [LoopSpec(count=count, body=body)]
 
-    def _deduped_actuals(self) -> list[str]:
-        """Return the deduplicated list of tensor argument names in the order
-        they are passed to .run() at runtime.
-
-        self.args.python_argdefs()[1] may contain duplicate names when the same
-        tensor appears as both input and output (e.g. in-place ops). call_kernel
-        drops duplicates when building the .run() call, so arg_index assignments
-        in codegen_kernel must use the same deduplicated order. Keeping the logic
-        here ensures both methods can never drift apart.
-        """
-        seen: dict[str, None] = {}
-        for arg in self.args.python_argdefs()[1]:
-            seen[arg] = None
-        return list(seen)
-
     def codegen_kernel(self):
         """Codegen the body of this kernel by pretty printing its list of OpSpecs"""
 
@@ -1310,16 +1312,23 @@ class SpyreKernel(Kernel[CSEVariable]):
                 return f"IndirectAccess('{name_sym}')"
             return "sympify('" + str(x) + "')"
 
-        # Now that all loads/stores have been processed we know the final
-        # kernel_args and can map names to indices.
+        # Compute live, deduped call-arg list from names in spyre_kernel_args.
+        # python_argdefs() includes all registered names from load()/store(),
+        # but spyre_kernel_args only has those surviving to the final op specs
+        # (excludes dead names like gather indices folded away by simplify_op_spec).
+        # Use this list for arg_index assignment so positional .run() args match.
+        live_names = {name for name, _ in self.spyre_kernel_args}
+        actuals = []
+        seen_actuals: set[str] = set()
+        for name in self.args.python_argdefs()[1]:
+            if name in live_names and name not in seen_actuals:
+                seen_actuals.add(name)
+                actuals.append(name)
+        self._live_call_arg_names = actuals
         has_pool_allocations = self.pool_size > 0
 
-        # _deduped_actuals() gives the same positional order that call_kernel
-        # uses when building the .run() call
-        deduped_actuals = {name: i for i, name in enumerate(self._deduped_actuals())}
-
         for name, tensor_arg in self.spyre_kernel_args:
-            tensor_arg.arg_index = deduped_actuals[name]
+            tensor_arg.arg_index = actuals.index(name)
             if _spyre_config.bundle_symbolic_args:
                 # On the symbolic path the HBM address is provided at runtime
                 # via input_arg_extract; start_address is never used as a
@@ -1383,14 +1392,12 @@ class SpyreKernel(Kernel[CSEVariable]):
             )
             call_args.append(pool_var_name)
 
-        # Add remaining kernel arguments, deduplicating tensors that appear
-        # as both input and output (e.g. in-place ops like x *= 2).  With
-        # symbolic args the MLIR bundle emits one
-        # !sdscbundle.input_arg<index> per unique arg_index; passing the
-        # same tensor twice would cause a runtime "Number of inputs
-        # mismatches" error in processComputeOnHostCommand.
-        for arg in self._deduped_actuals():
-            call_args.append(arg)
+        # Use live call args computed in codegen_kernel() to keep positional
+        # .run() args in sync with arg_index values baked into op specs.
+        assert self._live_call_arg_names is not None, (
+            "call_kernel() requires codegen_kernel() to have run first"
+        )
+        call_args.extend(self._live_call_arg_names)
 
         call_args_str = ", ".join(call_args)
         wrapper.writeline(f"{name}.run({call_args_str})")
