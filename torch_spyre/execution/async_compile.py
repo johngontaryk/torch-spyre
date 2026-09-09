@@ -35,7 +35,6 @@ from torch_spyre._inductor.kernel_provenance import (
     build_kernel_provenance_descriptor,
 )
 from torch_spyre._inductor.codegen.bundle import generate_bundle
-from torch_spyre._inductor.codegen.compute_ops import SymbolKind
 from torch_spyre.profiler._ffdc import CATEGORY_COMPILE_BACKEND, try_collect
 from .kernel_runner import SpyreSDSCKernelRunner, SpyreUnimplementedRunner
 from .kernel_cache import (
@@ -92,11 +91,16 @@ def _compile_to_dir(
     compile_dir: str,
     specs,
     pool_size: int,
-) -> list[SymbolKind]:
+):
     """Run generate_bundle then dxp_standalone for ``specs`` into ``compile_dir``.
 
     Shared by the cache-miss path and the no-cache path so that any change to
     the compilation sequence is applied in both places automatically.
+
+    Returns:
+        The list of ``SymbolKind`` values produced by ``generate_bundle``,
+        describing the kind (address symbol vs. dimension argument) of each
+        symbol in the compiled bundle.
     """
     symbol_kinds = generate_bundle(kernel_name, compile_dir, specs, pool_size=pool_size)
 
