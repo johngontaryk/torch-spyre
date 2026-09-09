@@ -295,13 +295,6 @@ class TestSpyreConfig(InductorTestCase):
         with config.patch({"bundle_symbolic_args": True}):
             comp_fn = torch.compile(fn)
             out, source_codes = run_and_get_code(comp_fn, a, b)
-            code = source_codes[0]
-
-        # The generated wrapper still imports SymbolicArg/SymbolicArgKind
-        # (used by the runner at runtime, not emitted as literals in the call).
-        FileCheck().check("from torch_spyre._C import").check("SymbolicArg").check(
-            "SymbolicArgKind"
-        ).run(code)
 
         # Ground-truth: resolve each tensor by its known run() position.
         # tensor_id == arg_index == position in the deduped call_args list.

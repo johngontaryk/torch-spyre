@@ -20,7 +20,6 @@ from torch_spyre._C import (
     prepare_kernel,
     register_kernel_provenance,
 )
-from torch_spyre._inductor import config as _spyre_config
 from torch_spyre._inductor.codegen.compute_ops import SymbolKind
 from torch_spyre._inductor.logging_utils import get_inductor_logger
 from torch_spyre._inductor.kernel_provenance import KernelProvenanceDescriptor
@@ -42,7 +41,7 @@ class SpyreUnimplementedRunner:
         self.op = op
 
     @with_ffdc(CATEGORY_UNIMPLEMENTED, logger, code_dir_attr=None)
-    def run(self, *args, **kw_args):
+    def run(self, *args, **kwargs):
         raise RuntimeError(
             f"Invoked {self.kernel_name} which contains"
             f" unimplemented operation {self.op}"
@@ -89,6 +88,36 @@ class SpyreSDSCKernelRunner:
                 list(kernel_provenance.debug_handle_ids),
             )
 
+        # Build the SymbolicArg payload from the canonical symbol order
+        # that generate_bundle() returned and stored on this runner.
+        # symbol_kinds matches the MLIR input_arg slot order: pool first
+        # (when frontend_pool_allocation is active), then kernel tensor
+        # args in arg_index order. The payload is invariant across launches
+        if self.symbol_kinds:
+            if self.symbol_kinds[0].is_pool:
+                # call_kernel prepends the pool tensor to args, so it sits at
+                # args[0].  Kernel tensor arg_indices are 0-based among kernel
+                # tensors only, so add 1 to account for the pool.
+                self._symbolic_args: list[SymbolicArg] | None = (
+                    [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0)]
+                ) + (
+                    [
+                        SymbolicArg(
+                            kind=SymbolicArgKind.kAddress,
+                            tensor_id=sk.arg_index + 1,
+                        )
+                        for sk in self.symbol_kinds[1:]
+                    ]
+                )
+            else:
+                # No pool param — arg_index maps directly to args position.
+                self._symbolic_args = [
+                    SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=sk.arg_index)
+                    for sk in self.symbol_kinds
+                ]
+        else:
+            self._symbolic_args = None
+
     @property
     def jobplan(self):
         if self._jobplan is None:
@@ -112,38 +141,10 @@ class SpyreSDSCKernelRunner:
         return self._jobplan
 
     @with_ffdc(CATEGORY_RUNTIME_LAUNCH, logger)
-    def run(self, *args, **kw_args):
+    def run(self, *args, **kwargs):
         logger.info("RUN: %s %s", self.kernel_name, self.code_dir)
         with torch.profiler.record_function(f"launch_jobplan:{self.kernel_name}"):
-            if _spyre_config.bundle_symbolic_args and self.symbol_kinds:
-                # Build the SymbolicArg payload from the canonical symbol order
-                # that generate_bundle() returned and stored on this runner.
-                # symbol_kinds matches the MLIR input_arg slot order: pool first
-                # (when frontend_pool_allocation is active), then kernel tensor
-                # args in arg_index order.
-                if self.symbol_kinds[0].is_pool:
-                    # call_kernel prepends the pool tensor to args, so it sits
-                    # at args[0]. Kernel tensor arg_indices are 0-based among
-                    # kernel tensors only, so add 1 to account for the pool.
-                    symbolic_args = (
-                        [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0)]
-                    ) + (
-                        [
-                            SymbolicArg(
-                                kind=SymbolicArgKind.kAddress,
-                                tensor_id=sk.arg_index + 1,
-                            )
-                            for sk in self.symbol_kinds[1:]
-                        ]
-                    )
-                else:
-                    # No pool param — arg_index maps directly to args position.
-                    symbolic_args = [
-                        SymbolicArg(
-                            kind=SymbolicArgKind.kAddress, tensor_id=sk.arg_index
-                        )
-                        for sk in self.symbol_kinds
-                    ]
-                launch_jobplan(self.jobplan, args, symbolic_args)
+            if self._symbolic_args is not None:
+                launch_jobplan(self.jobplan, args, self._symbolic_args)
             else:
                 launch_jobplan(self.jobplan, args)
