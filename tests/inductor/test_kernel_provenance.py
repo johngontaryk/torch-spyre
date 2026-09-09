@@ -29,7 +29,6 @@ from torch_spyre._C import (
     DataFormats,
     ElementArrangement,
     extract_kernel_provenance_key as extract_kernel_provenance_key_cpp,
-    SymbolicArg,
     SymbolicArgKind,
 )
 from torch_spyre._inductor.codegen.compute_ops import SymbolKind
@@ -735,12 +734,10 @@ class TestSpyreSDSCKernelRunnerSymbolicArgs:
 
         assert runner._symbolic_args is not None
         assert len(runner._symbolic_args) == 2
-        assert runner._symbolic_args[0] == SymbolicArg(
-            kind=SymbolicArgKind.kAddress, tensor_id=0
-        )
-        assert runner._symbolic_args[1] == SymbolicArg(
-            kind=SymbolicArgKind.kAddress, tensor_id=2
-        )
+        assert runner._symbolic_args[0].kind == SymbolicArgKind.kAddress
+        assert runner._symbolic_args[0].tensor_id == 0
+        assert runner._symbolic_args[1].kind == SymbolicArgKind.kAddress
+        assert runner._symbolic_args[1].tensor_id == 2
 
     def test_pool_first_symbol_kinds_offsets_kernel_tensor_ids(self):
         """Pool-first symbol_kinds: pool entry gets tensor_id=0; remaining
@@ -753,10 +750,8 @@ class TestSpyreSDSCKernelRunnerSymbolicArgs:
         assert runner._symbolic_args is not None
         assert len(runner._symbolic_args) == 2
         # Pool slot → tensor_id=0 (the pool tensor prepended by call_kernel).
-        assert runner._symbolic_args[0] == SymbolicArg(
-            kind=SymbolicArgKind.kAddress, tensor_id=0
-        )
+        assert runner._symbolic_args[0].kind == SymbolicArgKind.kAddress
+        assert runner._symbolic_args[0].tensor_id == 0
         # Kernel tensor at arg_index=0 → tensor_id=1 (+1 for pool offset).
-        assert runner._symbolic_args[1] == SymbolicArg(
-            kind=SymbolicArgKind.kAddress, tensor_id=1
-        )
+        assert runner._symbolic_args[1].kind == SymbolicArgKind.kAddress
+        assert runner._symbolic_args[1].tensor_id == 1
