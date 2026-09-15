@@ -41,8 +41,8 @@ class _RecordingPool:
         return future
 
 
-def _runner(name, code_dir, kernel_provenance=None):
-    return name, code_dir, kernel_provenance
+def _runner(name, code_dir, kernel_provenance=None, symbol_kinds=None):
+    return name, code_dir, kernel_provenance, symbol_kinds
 
 
 def test_sdsc_submits_all_dxp_jobs_before_wait():
@@ -99,8 +99,8 @@ def test_sdsc_submits_all_dxp_jobs_before_wait():
         compiler.wait(scope)
 
     assert scope == {
-        "kernel0": ("sdsc_0", "/tmp/k0", None),
-        "kernel1": ("sdsc_1", "/tmp/k1", None),
+        "kernel0": ("sdsc_0", "/tmp/k0", None, None),
+        "kernel1": ("sdsc_1", "/tmp/k1", None, None),
     }
 
 
@@ -136,7 +136,7 @@ def test_async_cache_commit_is_deferred_until_wait():
         compiler.wait(scope)
 
     commit.assert_called_once_with("/tmp/key.tmp", "key")
-    assert scope["kernel"] == ("sdsc_0", "/cache/key", None)
+    assert scope["kernel"] == ("sdsc_0", "/cache/key", None, None)
 
 
 def test_async_compile_failure_moves_cache_entry_at_wait():
@@ -212,12 +212,12 @@ def test_wait_drains_remaining_spyre_futures_after_failure():
         with pytest.raises(RuntimeError, match="first DXP failure"):
             compiler.wait(scope)
 
-    commit.assert_called_once_with("/tmp/key1.tmp", "key1")
-    assert scope["kernel1"].result() == ("sdsc_1", "/cache/key1", None)
-    assert [call.args[0] for call in move_failed.call_args_list] == [
-        "/tmp/key0.tmp",
-        "/tmp/key2.tmp",
-    ]
+        commit.assert_called_once_with("/tmp/key1.tmp", "key1")
+        assert scope["kernel1"].result() == ("sdsc_1", "/cache/key1", None, None)
+        assert [call.args[0] for call in move_failed.call_args_list] == [
+            "/tmp/key0.tmp",
+            "/tmp/key2.tmp",
+        ]
 
 
 def test_real_subprocess_pool_runs_dxp_jobs_concurrently(tmp_path: Path):
