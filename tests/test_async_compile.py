@@ -107,6 +107,7 @@ def test_sdsc_submits_all_dxp_jobs_before_wait():
 def test_async_cache_commit_is_deferred_until_wait():
     pool = _RecordingPool()
     compiler = async_compile_mod.SpyreAsyncCompile()
+    fake_symbol_kinds = ["sym0", "sym1"]
 
     with (
         torch._inductor.config.patch({"compile_threads": 2}),
@@ -122,7 +123,9 @@ def test_async_cache_commit_is_deferred_until_wait():
         patch.object(
             async_compile_mod, "commit_compile_dir", return_value="/cache/key"
         ) as commit,
-        patch.object(async_compile_mod, "generate_bundle"),
+        patch.object(
+            async_compile_mod, "generate_bundle", return_value=fake_symbol_kinds
+        ),
         patch.object(async_compile_mod, "find_unimplemented", return_value=None),
         patch.object(
             async_compile_mod, "build_kernel_provenance_descriptor", return_value=None
@@ -136,7 +139,7 @@ def test_async_cache_commit_is_deferred_until_wait():
         compiler.wait(scope)
 
     commit.assert_called_once_with("/tmp/key.tmp", "key")
-    assert scope["kernel"] == ("sdsc_0", "/cache/key", None, None)
+    assert scope["kernel"] == ("sdsc_0", "/cache/key", None, fake_symbol_kinds)
 
 
 def test_async_compile_failure_moves_cache_entry_at_wait():
@@ -173,6 +176,7 @@ def test_async_compile_failure_moves_cache_entry_at_wait():
 def test_wait_drains_remaining_spyre_futures_after_failure():
     pool = _RecordingPool()
     compiler = async_compile_mod.SpyreAsyncCompile()
+    fake_symbol_kinds = ["sym0", "sym1"]
 
     with (
         torch._inductor.config.patch({"compile_threads": 2}),
@@ -194,7 +198,9 @@ def test_wait_drains_remaining_spyre_futures_after_failure():
         patch.object(
             async_compile_mod, "commit_compile_dir", return_value="/cache/key1"
         ) as commit,
-        patch.object(async_compile_mod, "generate_bundle"),
+        patch.object(
+            async_compile_mod, "generate_bundle", return_value=fake_symbol_kinds
+        ),
         patch.object(async_compile_mod, "find_unimplemented", return_value=None),
         patch.object(
             async_compile_mod, "build_kernel_provenance_descriptor", return_value=None
@@ -213,7 +219,12 @@ def test_wait_drains_remaining_spyre_futures_after_failure():
             compiler.wait(scope)
 
         commit.assert_called_once_with("/tmp/key1.tmp", "key1")
-        assert scope["kernel1"].result() == ("sdsc_1", "/cache/key1", None, None)
+        assert scope["kernel1"].result() == (
+            "sdsc_1",
+            "/cache/key1",
+            None,
+            fake_symbol_kinds,
+        )
         assert [call.args[0] for call in move_failed.call_args_list] == [
             "/tmp/key0.tmp",
             "/tmp/key2.tmp",
