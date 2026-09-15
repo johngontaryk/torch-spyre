@@ -8864,6 +8864,11 @@ class TestSpyreKernelPoolSize(unittest.TestCase):
         self.assertEqual(default_kernel.pool_size, 0)
 
 
+def _is_clean(spec: TileSpec) -> bool:
+    """True when no reduction axis is tiled."""
+    return not any(a.is_reduction for a in spec.axes)
+
+
 class TestTileSpecRepresentation(unittest.TestCase):
     """TileAxis/TileSpec/CoreDivision.tiling and the min_footprint win."""
 
@@ -8873,7 +8878,7 @@ class TestTileSpecRepresentation(unittest.TestCase):
         self.assertEqual(u.depth, 0)
         self.assertEqual(u.tile_count, 1)
         self.assertEqual(u.output_tile_count, 1)
-        self.assertTrue(u.is_clean)
+        self.assertTrue(_is_clean(u))
         self.assertEqual(u.label, "untiled")
 
     def test_ordered_and_hashable_equality_is_same_shape(self):
@@ -8892,7 +8897,7 @@ class TestTileSpecRepresentation(unittest.TestCase):
         self.assertEqual(a.depth, 2)
         self.assertEqual(a.tile_count, 8)
         self.assertEqual(a.output_tile_count, 8)
-        self.assertTrue(a.is_clean)
+        self.assertTrue(_is_clean(a))
         self.assertEqual(a.label, "d0:4/d1:2")
 
     def test_reduction_axis_excluded_from_output_tile_count(self):
@@ -8900,11 +8905,11 @@ class TestTileSpecRepresentation(unittest.TestCase):
         # Reduction level counts in tile_count but not in output_tile_count.
         self.assertEqual(r.tile_count, 12)
         self.assertEqual(r.output_tile_count, 4)
-        self.assertFalse(r.is_clean)
+        self.assertFalse(_is_clean(r))
         self.assertEqual(r.label, "d0:4/~d2:3")
 
     def test_core_division_tiling_defaults_untiled_and_inert(self):
-        cd = CoreDivision(output_splits={0: 2})
+        cd = CoreDivision(splits={0: 2})
         self.assertEqual(cd.tiling, TileSpec())
         self.assertTrue(cd.tiling.is_untiled)
         # Distinct CoreDivisions do not share one mutable default.
@@ -8915,7 +8920,7 @@ class TestTileSpecRepresentation(unittest.TestCase):
             name="x",
             size=1024,
             uses=[0, 1],
-            core_divisions=[CoreDivision(output_splits={0: 2})],
+            core_divisions=[CoreDivision(splits={0: 2})],
         )
         self.assertEqual(buf.min_footprint, ceil_div(1024, 2))
 
@@ -8925,7 +8930,7 @@ class TestTileSpecRepresentation(unittest.TestCase):
             name="y",
             size=1024,
             uses=[0, 1],
-            core_divisions=[CoreDivision(output_splits={0: 2}, tiling=spec)],
+            core_divisions=[CoreDivision(splits={0: 2}, tiling=spec)],
         )
         self.assertEqual(buf.min_footprint, ceil_div(1024, 2 * spec.output_tile_count))
 
@@ -8936,7 +8941,7 @@ class TestTileSpecRepresentation(unittest.TestCase):
             name="z",
             size=1024,
             uses=[0, 1],
-            core_divisions=[CoreDivision(output_splits={0: 2}, tiling=spec)],
+            core_divisions=[CoreDivision(splits={0: 2}, tiling=spec)],
         )
         self.assertEqual(buf.min_footprint, ceil_div(1024, 2 * spec.output_tile_count))
 
