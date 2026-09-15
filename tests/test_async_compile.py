@@ -26,6 +26,7 @@ from torch._inductor.codecache import CodeCacheFuture
 from torch._inductor.async_compile import shutdown_compile_workers
 
 from torch_spyre._inductor import config as spyre_config
+from torch_spyre._inductor.codegen.compute_ops import SymbolKind
 from torch_spyre.execution import async_compile as async_compile_mod
 
 
@@ -126,6 +127,7 @@ def test_async_cache_commit_is_deferred_until_wait():
         patch.object(
             async_compile_mod, "generate_bundle", return_value=fake_symbol_kinds
         ),
+        patch.object(async_compile_mod, "save_symbol_kinds"),
         patch.object(async_compile_mod, "find_unimplemented", return_value=None),
         patch.object(
             async_compile_mod, "build_kernel_provenance_descriptor", return_value=None
@@ -140,6 +142,44 @@ def test_async_cache_commit_is_deferred_until_wait():
 
     commit.assert_called_once_with("/tmp/key.tmp", "key")
     assert scope["kernel"] == ("sdsc_0", "/cache/key", None, fake_symbol_kinds)
+
+
+def test_cache_hit_reloads_symbol_kinds_from_miss(tmp_path: Path):
+    compiler = async_compile_mod.SpyreAsyncCompile()
+    compile_dir = str(tmp_path / "key.tmp")
+    Path(compile_dir).mkdir()
+    fake_symbol_kinds = [SymbolKind.kernel(0), SymbolKind.kernel(2)]
+
+    with (
+        spyre_config.patch(  # type: ignore[attr-defined]
+            {"async_dxp_compile": False, "spyre_kernel_cache": True}
+        ),
+        patch.object(async_compile_mod, "compute_specs_hash", return_value="key"),
+        patch.object(
+            async_compile_mod,
+            "get_cached_kernel_dir",
+            side_effect=[None, compile_dir],
+        ),
+        patch.object(
+            async_compile_mod, "allocate_compile_dir", return_value=compile_dir
+        ),
+        patch.object(async_compile_mod, "commit_compile_dir", return_value=compile_dir),
+        patch.object(
+            async_compile_mod, "generate_bundle", return_value=fake_symbol_kinds
+        ) as generate_bundle,
+        patch.object(async_compile_mod, "_run_dxp"),
+        patch.object(async_compile_mod, "find_unimplemented", return_value=None),
+        patch.object(
+            async_compile_mod, "build_kernel_provenance_descriptor", return_value=None
+        ),
+        patch.object(async_compile_mod, "SpyreSDSCKernelRunner", side_effect=_runner),
+    ):
+        miss_runner = compiler.sdsc("sdsc_0", [])
+        hit_runner = compiler.sdsc("sdsc_0", [])
+
+    generate_bundle.assert_called_once()
+    assert miss_runner[3] == fake_symbol_kinds
+    assert hit_runner[3] == fake_symbol_kinds
 
 
 def test_async_compile_failure_moves_cache_entry_at_wait():
@@ -158,6 +198,7 @@ def test_async_compile_failure_moves_cache_entry_at_wait():
             async_compile_mod, "allocate_compile_dir", return_value="/tmp/key.tmp"
         ),
         patch.object(async_compile_mod, "generate_bundle"),
+        patch.object(async_compile_mod, "save_symbol_kinds"),
         patch.object(async_compile_mod, "find_unimplemented", return_value=None),
         patch.object(
             async_compile_mod, "build_kernel_provenance_descriptor", return_value=None
@@ -201,6 +242,7 @@ def test_wait_drains_remaining_spyre_futures_after_failure():
         patch.object(
             async_compile_mod, "generate_bundle", return_value=fake_symbol_kinds
         ),
+        patch.object(async_compile_mod, "save_symbol_kinds"),
         patch.object(async_compile_mod, "find_unimplemented", return_value=None),
         patch.object(
             async_compile_mod, "build_kernel_provenance_descriptor", return_value=None

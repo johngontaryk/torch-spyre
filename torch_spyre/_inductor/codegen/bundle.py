@@ -241,6 +241,11 @@ def generate_bundle(
                 dimension_sym_indices.append(i)
             else:
                 dimension_dup_canonical[i] = seen_dim_sym[dim_sym_key]
+    if dimension_sym_indices:
+        raise NotImplementedError(
+            "SDSC bundle dimension symbols require runtime kDimension support"
+        )
+
     # MLIR name for each canonical dimension symbol, e.g. "%sym_0_1".
     dim_param_names: dict[int, str] = {
         sym_idx: (

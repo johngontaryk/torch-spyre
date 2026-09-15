@@ -46,6 +46,8 @@ from .kernel_cache import (
     compute_specs_hash,
     get_cached_kernel_dir,
     get_kernel_registry,
+    load_symbol_kinds,
+    save_symbol_kinds,
     _move_to_failed_dir,
 )
 
@@ -319,7 +321,10 @@ class SpyreAsyncCompile(AsyncCompile):
                     logger.debug("Cache HIT: Using cached kernel from: %s", cached_dir)
                     get_kernel_registry().record_hit(cache_key)
                     return SpyreSDSCKernelRunner(
-                        kernel_name, cached_dir, kernel_provenance=kernel_provenance
+                        kernel_name,
+                        cached_dir,
+                        kernel_provenance=kernel_provenance,
+                        symbol_kinds=load_symbol_kinds(cached_dir),
                     )
 
                 logger.debug("Cache MISS: Compiling kernel")
@@ -332,6 +337,7 @@ class SpyreAsyncCompile(AsyncCompile):
                     symbol_kinds = _compile_to_dir(
                         kernel_name, compile_dir, specs, pool_size
                     )
+                    save_symbol_kinds(compile_dir, symbol_kinds)
                     task = self._submit_dxp(kernel_name, compile_dir)
                     if task is not None:
                         return self._compile_future(

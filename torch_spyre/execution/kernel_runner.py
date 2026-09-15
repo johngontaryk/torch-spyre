@@ -141,7 +141,7 @@ class SpyreSDSCKernelRunner:
         return self._jobplan
 
     @with_ffdc(CATEGORY_RUNTIME_LAUNCH, logger)
-    def run(self, *args, **kwargs):
+    def run(self, *args):
         logger.info("RUN: %s %s", self.kernel_name, self.code_dir)
         with torch.profiler.record_function(f"launch_jobplan:{self.kernel_name}"):
             if self._symbolic_args is not None:
