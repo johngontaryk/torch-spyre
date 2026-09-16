@@ -7315,7 +7315,7 @@ class TestGenerateBundleMlirSymbolicArgs(unittest.TestCase):
         self.assertIn("sdscbundle.sdsc_execute (%arg_0, %arg_1)", mlir)
 
     def test_mixed_address_and_dimension_symbols_are_rejected(self):
-        op = self._make_op_spec_with_hbm_args("add", [0])
+        op = self._make_op_spec_with_hbm_args("add", [0, 1])
 
         def fake(idx, op_spec, symbols, symbol_id_offset=0):
             dimension = SymbolKind.dimension(16, 128, "s0")

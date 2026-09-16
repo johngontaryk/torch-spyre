@@ -14,6 +14,7 @@
 
 """Device-free tests for parallel DXP compilation."""
 
+import dataclasses
 from concurrent.futures import Future
 import os
 from pathlib import Path
@@ -149,6 +150,7 @@ def test_cache_hit_reloads_symbol_kinds_from_miss(tmp_path: Path):
     compile_dir = str(tmp_path / "key.tmp")
     Path(compile_dir).mkdir()
     fake_symbol_kinds = [SymbolKind.kernel(0), SymbolKind.kernel(2)]
+    fake_symbol_kinds_raw = [dataclasses.asdict(sk) for sk in fake_symbol_kinds]
 
     with (
         spyre_config.patch(  # type: ignore[attr-defined]
@@ -167,6 +169,12 @@ def test_cache_hit_reloads_symbol_kinds_from_miss(tmp_path: Path):
         patch.object(
             async_compile_mod, "generate_bundle", return_value=fake_symbol_kinds
         ) as generate_bundle,
+        patch.object(async_compile_mod, "save_symbol_kinds"),
+        patch.object(
+            async_compile_mod,
+            "load_symbol_kinds_raw",
+            return_value=fake_symbol_kinds_raw,
+        ),
         patch.object(async_compile_mod, "_run_dxp"),
         patch.object(async_compile_mod, "find_unimplemented", return_value=None),
         patch.object(

@@ -40,13 +40,14 @@ from torch_spyre._inductor.kernel_provenance import (
 from torch_spyre._inductor.codegen.bundle import generate_bundle
 from torch_spyre.profiler._ffdc import CATEGORY_COMPILE_BACKEND, try_collect
 from .kernel_runner import SpyreSDSCKernelRunner, SpyreUnimplementedRunner
+from torch_spyre._inductor.codegen.compute_ops import SymbolKind
 from .kernel_cache import (
     allocate_compile_dir,
     commit_compile_dir,
     compute_specs_hash,
     get_cached_kernel_dir,
     get_kernel_registry,
-    load_symbol_kinds,
+    load_symbol_kinds_raw,
     save_symbol_kinds,
     _move_to_failed_dir,
 )
@@ -324,7 +325,9 @@ class SpyreAsyncCompile(AsyncCompile):
                         kernel_name,
                         cached_dir,
                         kernel_provenance=kernel_provenance,
-                        symbol_kinds=load_symbol_kinds(cached_dir),
+                        symbol_kinds=[
+                            SymbolKind(**d) for d in load_symbol_kinds_raw(cached_dir)
+                        ],
                     )
 
                 logger.debug("Cache MISS: Compiling kernel")
