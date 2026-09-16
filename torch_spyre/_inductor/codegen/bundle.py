@@ -241,11 +241,6 @@ def generate_bundle(
                 dimension_sym_indices.append(i)
             else:
                 dimension_dup_canonical[i] = seen_dim_sym[dim_sym_key]
-    if dimension_sym_indices:
-        raise NotImplementedError(
-            "SDSC bundle dimension symbols require runtime kDimension support"
-        )
-
     # MLIR name for each canonical dimension symbol, e.g. "%sym_0_1".
     dim_param_names: dict[int, str] = {
         sym_idx: (
@@ -281,7 +276,7 @@ def generate_bundle(
         # device_mem_allocate, not as a function parameter.
         emit_pool_param = has_pool and _spyre_config.frontend_pool_allocation
         # Built in lock-step with the params list so the two can never diverge.
-        # Dimension symbols excluded until kDimension is implemented.
+        # Order: pool (when frontend_pool_allocation), kernel addresses, dimensions.
         param_symbol_kinds: list[SymbolKind] = []
         if emit_pool_param or kernel_arg_sym_indices or dimension_sym_indices:
             params = []
@@ -297,6 +292,7 @@ def generate_bundle(
                 params.append(
                     f"{dim_param_names[sym_idx]}_base: {_dim_input_arg_type(dim_sk)}"
                 )
+                param_symbol_kinds.append(symbol_kinds[sym_idx])
             f.write(f"\tfunc.func @sdsc_bundle({', '.join(params)}) {{\n")
         else:
             f.write("\tfunc.func @sdsc_bundle() {\n")

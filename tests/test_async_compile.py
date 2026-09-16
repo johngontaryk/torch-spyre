@@ -279,6 +279,20 @@ def test_wait_drains_remaining_spyre_futures_after_failure():
         ]
 
 
+def test_compile_to_dir_rejects_dimension_symbols(tmp_path: Path):
+    """_compile_to_dir must raise NotImplementedError when generate_bundle returns
+    dimension symbols, before any dxp_standalone artifact is produced."""
+    fake_symbol_kinds = [SymbolKind.dimension(16, 128, "s0"), SymbolKind.kernel(0)]
+
+    with (
+        patch.object(
+            async_compile_mod, "generate_bundle", return_value=fake_symbol_kinds
+        ),
+        pytest.raises(NotImplementedError, match="kDimension"),
+    ):
+        async_compile_mod._compile_to_dir("test_kernel", str(tmp_path), [], 0)
+
+
 def test_real_subprocess_pool_runs_dxp_jobs_concurrently(tmp_path: Path):
     """Two DXP jobs must overlap rather than running serially in the parent."""
     bin_dir = tmp_path / "bin"

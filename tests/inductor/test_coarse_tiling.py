@@ -7314,24 +7314,6 @@ class TestGenerateBundleMlirSymbolicArgs(unittest.TestCase):
         # First sdsc_execute uses first two extracted names
         self.assertIn("sdscbundle.sdsc_execute (%arg_0, %arg_1)", mlir)
 
-    def test_mixed_address_and_dimension_symbols_are_rejected(self):
-        op = self._make_op_spec_with_hbm_args("abs", [0, 1])
-
-        def fake(idx, op_spec, symbols, symbol_id_offset=0):
-            dimension = SymbolKind.dimension(16, 128, "s0")
-            address = SymbolKind.kernel(0)
-            symbols.extend([128, op_spec.args[0].allocation["hbm"]])
-            address_sym_id = -(symbol_id_offset + 2)
-            return (
-                _make_tiled_json(idx, address_sym_id),
-                [128, op_spec.args[0].allocation["hbm"]],
-                [{}, {}],
-                [dimension, address],
-            )
-
-        with self.assertRaisesRegex(NotImplementedError, "kDimension"):
-            self._bundle([op], fake_compile=fake)
-
     def test_returned_symbol_kinds_match_input_arg_order(self):
         """generate_bundle returns SymbolKind list matching input_arg<index> signature order."""
         # op_b uses arg_index=2, op_a uses arg_index=0

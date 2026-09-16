@@ -948,7 +948,9 @@ class TestFfdcAsyncCompile:
             )
 
         class _Runner:
-            def __init__(self, name, code_dir, kernel_provenance=None):
+            def __init__(
+                self, name, code_dir, kernel_provenance=None, symbol_kinds=None
+            ):
                 self.kernel_name = name
                 self.code_dir = code_dir
                 self.kernel_provenance = kernel_provenance
