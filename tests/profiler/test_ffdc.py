@@ -928,6 +928,16 @@ class TestFfdcAsyncCompile:
             "torch_spyre._inductor.codegen.bundle",
             generate_bundle=lambda *a, **k: None,
         )
+
+        class _SymbolKind:
+            def __init__(self, **kwargs):
+                self.__dict__.update(kwargs)
+
+        _stub_module(
+            monkeypatch,
+            "torch_spyre._inductor.codegen.compute_ops",
+            SymbolKind=_SymbolKind,
+        )
         if "torch_spyre._C" not in sys.modules:
             _stub_module(
                 monkeypatch,

@@ -25,6 +25,7 @@ import torch
 from torch._inductor.codecache import code_hash
 from torch._inductor.runtime.runtime_utils import cache_dir
 
+from torch_spyre._inductor.codegen.compute_ops import SymbolKind
 from torch_spyre._inductor.logging_utils import get_inductor_logger
 
 
@@ -450,24 +451,14 @@ def get_cached_kernel_dir(cache_key: str) -> Optional[str]:
     return cached_dir
 
 
-def save_symbol_kinds(compile_dir: str, symbol_kinds: list) -> None:
-    """Serialise symbol_kinds (list of SymbolKind) to JSON in compile_dir.
-
-    Accepts any list whose elements support dataclasses.asdict() so that
-    kernel_cache.py does not need to import SymbolKind directly.
-    """
+def save_symbol_kinds(compile_dir: str, symbol_kinds: list[SymbolKind]) -> None:
     with open(os.path.join(compile_dir, _SYMBOL_KINDS_FILE), "w") as f:
         json.dump([dataclasses.asdict(kind) for kind in symbol_kinds], f)
 
 
-def load_symbol_kinds_raw(cached_dir: str) -> list[dict]:
-    """Return symbol_kinds as a list of plain dicts loaded from JSON.
-
-    The caller (async_compile.py) reconstructs SymbolKind objects so that
-    kernel_cache.py does not need to import SymbolKind directly.
-    """
+def load_symbol_kinds(cached_dir: str) -> list[SymbolKind]:
     with open(os.path.join(cached_dir, _SYMBOL_KINDS_FILE)) as f:
-        return json.load(f)
+        return [SymbolKind(**kind) for kind in json.load(f)]
 
 
 def allocate_compile_dir(cache_key: str) -> str:
