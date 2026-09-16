@@ -926,7 +926,7 @@ class TestFfdcAsyncCompile:
         _stub_module(
             monkeypatch,
             "torch_spyre._inductor.codegen.bundle",
-            generate_bundle=lambda *a, **k: None,
+            generate_bundle=lambda *a, **k: [],
         )
 
         class _SymbolKind:
@@ -964,7 +964,7 @@ class TestFfdcAsyncCompile:
 
         mod = _reimport(monkeypatch, "torch_spyre.execution.async_compile")
         monkeypatch.setattr(mod, "get_output_dir", lambda name: out_dir)
-        monkeypatch.setattr(mod, "generate_bundle", lambda *a, **k: None)
+        monkeypatch.setattr(mod, "generate_bundle", lambda *a, **k: [])
         monkeypatch.setattr(mod, "find_unimplemented", lambda specs: None)
         return mod, out_dir
 

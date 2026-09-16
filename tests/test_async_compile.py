@@ -53,6 +53,7 @@ def test_sdsc_submits_all_dxp_jobs_before_wait():
 
     def generate_bundle(name, output_dir, specs, pool_size=0):
         events.append(("bundle", name))
+        return []
 
     real_submit = pool.submit
 
@@ -100,15 +101,15 @@ def test_sdsc_submits_all_dxp_jobs_before_wait():
         compiler.wait(scope)
 
     assert scope == {
-        "kernel0": ("sdsc_0", "/tmp/k0", None, None),
-        "kernel1": ("sdsc_1", "/tmp/k1", None, None),
+        "kernel0": ("sdsc_0", "/tmp/k0", None, []),
+        "kernel1": ("sdsc_1", "/tmp/k1", None, []),
     }
 
 
 def test_async_cache_commit_is_deferred_until_wait():
     pool = _RecordingPool()
     compiler = async_compile_mod.SpyreAsyncCompile()
-    fake_symbol_kinds = ["sym0", "sym1"]
+    fake_symbol_kinds = [SymbolKind.kernel(0), SymbolKind.kernel(1)]
 
     with (
         torch._inductor.config.patch({"compile_threads": 2}),
@@ -203,7 +204,7 @@ def test_async_compile_failure_moves_cache_entry_at_wait():
         patch.object(
             async_compile_mod, "allocate_compile_dir", return_value="/tmp/key.tmp"
         ),
-        patch.object(async_compile_mod, "generate_bundle"),
+        patch.object(async_compile_mod, "generate_bundle", return_value=[]),
         patch.object(async_compile_mod, "save_symbol_kinds"),
         patch.object(async_compile_mod, "find_unimplemented", return_value=None),
         patch.object(
@@ -223,7 +224,7 @@ def test_async_compile_failure_moves_cache_entry_at_wait():
 def test_wait_drains_remaining_spyre_futures_after_failure():
     pool = _RecordingPool()
     compiler = async_compile_mod.SpyreAsyncCompile()
-    fake_symbol_kinds = ["sym0", "sym1"]
+    fake_symbol_kinds = [SymbolKind.kernel(0), SymbolKind.kernel(1)]
 
     with (
         torch._inductor.config.patch({"compile_threads": 2}),
