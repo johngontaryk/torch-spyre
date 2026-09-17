@@ -16,6 +16,7 @@
 
 import ctypes
 import dataclasses
+import os
 import types
 from unittest.mock import patch
 
@@ -52,6 +53,7 @@ from torch_spyre._inductor.profiler_event import (
     format_kernel_provenance_event_name,
 )
 from torch_spyre._inductor.spyre_kernel import _codegen_op_spec_list
+from torch_spyre.execution import async_compile
 from torch_spyre.execution.async_compile import SpyreAsyncCompile
 from torch_spyre.execution.kernel_runner import SpyreSDSCKernelRunner
 
@@ -774,3 +776,32 @@ class TestSpyreSDSCKernelRunnerSymbolicArgs:
         # Kernel tensor at arg_index=0 → tensor_id=1 (+1 for pool offset).
         assert runner._symbolic_args[1].kind == SymbolicArgKind.kAddress
         assert runner._symbolic_args[1].tensor_id == 1
+class TestOutputDirNameLength:
+    """Per-kernel path components must stay within NAME_MAX (regression).
+
+    A deeply fused kernel (e.g. Gemma-4 MoE decode) produces a kernel name of
+    >250 chars; left whole in the mkdtemp prefix it overflowed the 255-byte
+    Linux limit on one path component and raised ``[Errno 36]`` ENAMETOOLONG.
+    """
+
+    def test_safe_kernel_name_short_passthrough(self):
+        assert async_compile._safe_kernel_name("sdsc_fused_mm_0") == "sdsc_fused_mm_0"
+
+    def test_safe_kernel_name_truncates_long(self):
+        long_name = "sdsc_fused_" + "_".join(["view"] * 80)
+        assert len(long_name) > async_compile._NAME_MAX
+        safe = async_compile._safe_kernel_name(long_name)
+        assert len(safe) == async_compile._KERNEL_NAME_BUDGET
+        assert long_name.startswith(safe)
+
+    def test_get_output_dir_bounds_long_kernel_name(self, tmp_path):
+        long_name = "sdsc_fused_" + "_".join(["view"] * 80)
+        with patch(
+            "torch_spyre.execution.async_compile.cache_dir",
+            return_value=str(tmp_path),
+        ):
+            out = async_compile.get_output_dir(long_name)
+        try:
+            assert len(os.path.basename(out).encode()) <= async_compile._NAME_MAX
+        finally:
+            os.rmdir(out)
