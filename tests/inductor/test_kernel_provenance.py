@@ -776,6 +776,8 @@ class TestSpyreSDSCKernelRunnerSymbolicArgs:
         # Kernel tensor at arg_index=0 → tensor_id=1 (+1 for pool offset).
         assert runner._symbolic_args[1].kind == SymbolicArgKind.kAddress
         assert runner._symbolic_args[1].tensor_id == 1
+
+
 class TestOutputDirNameLength:
     """Per-kernel path components must stay within NAME_MAX (regression).
 
