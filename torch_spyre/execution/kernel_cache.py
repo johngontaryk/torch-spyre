@@ -368,6 +368,15 @@ def compute_specs_hash(
     # sdscbundle.device_mem_allocate <pool_size> bytes in bundle.mlir.
     content_parts.append(f"pool_size:{pool_size}".encode())
 
+    # Include frontend_pool_allocation: this flag changes both the bundle
+    # signature (adds a pool base-address parameter as the first MLIR input)
+    # and the .run() argument ABI (tensor_id indices are offset by 1 when the
+    # pool param is present).  A cached kernel compiled without it must never
+    # be reused when the flag is on, and vice-versa.
+    content_parts.append(
+        f"frontend_pool_allocation:{int(_spyre_config.frontend_pool_allocation)}".encode()
+    )
+
     content = b"||".join(content_parts)
     extra = "||".join(
         [
