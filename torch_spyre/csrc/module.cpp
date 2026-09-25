@@ -600,21 +600,19 @@ PYBIND11_MODULE(_C, m) {
       .value("kDimension", spyre::SymbolicArgKind::kDimension);
 
   py::class_<spyre::SymbolicArg>(m, "SymbolicArg")
-      .def(py::init([](spyre::SymbolicArgKind kind, int64_t tensor_id,
-                       int64_t dim_index, int64_t value) {
-             return spyre::SymbolicArg{kind, tensor_id, dim_index, value};
+      .def(py::init([](spyre::SymbolicArgKind kind, int64_t value) {
+             TORCH_CHECK(kind != spyre::SymbolicArgKind::kAddress || value >= 0,
+                         "SymbolicArg with kAddress must have a value (tensor "
+                         "id); got value=-1");
+             return spyre::SymbolicArg{kind, value};
            }),
-           py::arg("kind"), py::arg("tensor_id"),
-           py::arg("dim_index") = int64_t{-1}, py::arg("value") = int64_t{-1})
+           py::arg("kind"), py::arg("value") = int64_t{-1})
       .def_readwrite("kind", &spyre::SymbolicArg::kind)
       .def_readwrite("value", &spyre::SymbolicArg::value)
-      .def_readwrite("tensor_id", &spyre::SymbolicArg::tensor_id)
-      .def_readwrite("dim_index", &spyre::SymbolicArg::dim_index)
       .def("__repr__", [](const spyre::SymbolicArg& a) {
         return "<SymbolicArg kind=" +
                std::to_string(static_cast<int32_t>(a.kind)) +
-               " tensor_id=" + std::to_string(a.tensor_id) +
-               " dim_index=" + std::to_string(a.dim_index) + ">";
+               " value=" + std::to_string(a.value) + ">";
       });
 
   m.def("prepare_kernel", &spyre::prepareKernel, py::arg("spyrecode_dir"),

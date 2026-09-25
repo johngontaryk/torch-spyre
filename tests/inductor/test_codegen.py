@@ -301,19 +301,19 @@ class TestSpyreConfig(InductorTestCase):
         # tensor_id == arg_index == position in the deduped call_args list.
         tensors = [a, b, out]
         addr_0 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0)]
+            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, value=0)]
         )[0]
         addr_1 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1)]
+            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, value=1)]
         )[0]
         addr_2 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2)]
+            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, value=2)]
         )[0]
 
         payload_canonical = [
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, value=0),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, value=1),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, value=2),
         ]
         resolved = _resolve_symbolic_args(tensors, payload_canonical)
         self.assertEqual(resolved, [addr_0, addr_1, addr_2])
@@ -321,9 +321,9 @@ class TestSpyreConfig(InductorTestCase):
         # Forward-vs-reversed differential: wrong slot order must produce a
         # different address vector, proving the ordering contract is exercised.
         payload_reversed = [
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, value=2),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, value=1),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, value=0),
         ]
         resolved_rev = _resolve_symbolic_args(tensors, payload_reversed)
         self.assertNotEqual(

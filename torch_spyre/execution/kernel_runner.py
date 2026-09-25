@@ -99,12 +99,12 @@ class SpyreSDSCKernelRunner:
                 # args[0].  Kernel tensor arg_indices are 0-based among kernel
                 # tensors only, so add 1 to account for the pool.
                 self._symbolic_args: list[SymbolicArg] | None = (
-                    [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0)]
+                    [SymbolicArg(kind=SymbolicArgKind.kAddress, value=0)]
                 ) + (
                     [
                         SymbolicArg(
                             kind=SymbolicArgKind.kAddress,
-                            tensor_id=sk.arg_index + 1,
+                            value=sk.arg_index + 1,
                         )
                         for sk in self.symbol_kinds[1:]
                     ]
@@ -112,7 +112,7 @@ class SpyreSDSCKernelRunner:
             else:
                 # No pool param — arg_index maps directly to args position.
                 self._symbolic_args = [
-                    SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=sk.arg_index)
+                    SymbolicArg(kind=SymbolicArgKind.kAddress, value=sk.arg_index)
                     for sk in self.symbol_kinds
                 ]
         else:

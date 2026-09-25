@@ -750,20 +750,20 @@ class TestSpyreSDSCKernelRunnerSymbolicArgs:
         assert runner._symbolic_args is None
 
     def test_non_pool_symbol_kinds_map_arg_index_directly(self):
-        """Non-pool symbol_kinds: tensor_id == sk.arg_index for each entry."""
+        """Non-pool symbol_kinds: value == sk.arg_index for each entry."""
         symbol_kinds = [SymbolKind.kernel(0), SymbolKind.kernel(2)]
         runner = self._make_runner(symbol_kinds)
 
         assert runner._symbolic_args is not None
         assert len(runner._symbolic_args) == 2
         assert runner._symbolic_args[0].kind == SymbolicArgKind.kAddress
-        assert runner._symbolic_args[0].tensor_id == 0
+        assert runner._symbolic_args[0].value == 0
         assert runner._symbolic_args[1].kind == SymbolicArgKind.kAddress
-        assert runner._symbolic_args[1].tensor_id == 2
+        assert runner._symbolic_args[1].value == 2
 
     def test_pool_first_symbol_kinds_offsets_kernel_tensor_ids(self):
-        """Pool-first symbol_kinds: pool entry gets tensor_id=0; remaining
-        entries get tensor_id=sk.arg_index+1 to account for the pool tensor
+        """Pool-first symbol_kinds: pool entry gets value=0; remaining
+        entries get value=sk.arg_index+1 to account for the pool tensor
         that call_kernel prepends to args.
         """
         symbol_kinds = [SymbolKind.pool(), SymbolKind.kernel(0)]
@@ -771,12 +771,12 @@ class TestSpyreSDSCKernelRunnerSymbolicArgs:
 
         assert runner._symbolic_args is not None
         assert len(runner._symbolic_args) == 2
-        # Pool slot → tensor_id=0 (the pool tensor prepended by call_kernel).
+        # Pool slot → value=0 (the pool tensor prepended by call_kernel).
         assert runner._symbolic_args[0].kind == SymbolicArgKind.kAddress
-        assert runner._symbolic_args[0].tensor_id == 0
-        # Kernel tensor at arg_index=0 → tensor_id=1 (+1 for pool offset).
+        assert runner._symbolic_args[0].value == 0
+        # Kernel tensor at arg_index=0 → value=1 (+1 for pool offset).
         assert runner._symbolic_args[1].kind == SymbolicArgKind.kAddress
-        assert runner._symbolic_args[1].tensor_id == 1
+        assert runner._symbolic_args[1].value == 1
 
 
 class TestOutputDirNameLength:
