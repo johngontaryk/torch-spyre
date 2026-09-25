@@ -241,6 +241,8 @@ class TestSymbolicArg(TestCase):
             payload = [
                 torch_spyre._C.SymbolicArg(
                     kind=torch_spyre._C.SymbolicArgKind.kDimension,
+                    tensor_id=0,
+                    dim_index=0,
                 )
             ]
 
@@ -251,16 +253,6 @@ class TestSymbolicArg(TestCase):
                 ):
                     torch_spyre._C.launch_jobplan(job_plan, [t], symbolic_args=payload)
 
-    def test_kaddress_without_value_raises(self):
-        """Constructing a kAddress SymbolicArg without a value raises an error.
-
-        No hardware required — pure Python boundary check.
-        """
-        with pytest.raises(RuntimeError, match="kAddress must have a value"):
-            torch_spyre._C.SymbolicArg(
-                kind=torch_spyre._C.SymbolicArgKind.kAddress,
-            )
-
     def test_symbolic_arg_attributes_and_repr_roundtrip(self):
         """SymbolicArg fields and repr survive pybind construction.
 
@@ -268,29 +260,28 @@ class TestSymbolicArg(TestCase):
         """
         addr_arg = torch_spyre._C.SymbolicArg(
             kind=torch_spyre._C.SymbolicArgKind.kAddress,
-            value=1,
+            tensor_id=1,
         )
         self.assertEqual(addr_arg.kind, torch_spyre._C.SymbolicArgKind.kAddress)
-        self.assertEqual(addr_arg.value, 1)
+        self.assertEqual(addr_arg.tensor_id, 1)
+        self.assertEqual(addr_arg.dim_index, -1)
 
         dim_arg = torch_spyre._C.SymbolicArg(
             kind=torch_spyre._C.SymbolicArgKind.kDimension,
-            value=48,
+            tensor_id=0,
+            dim_index=2,
         )
         self.assertEqual(dim_arg.kind, torch_spyre._C.SymbolicArgKind.kDimension)
-        self.assertEqual(dim_arg.value, 48)
-
-        dim_arg_runtime = torch_spyre._C.SymbolicArg(
-            kind=torch_spyre._C.SymbolicArgKind.kDimension,
-        )
-        self.assertEqual(dim_arg_runtime.value, -1)
+        self.assertEqual(dim_arg.tensor_id, 0)
+        self.assertEqual(dim_arg.dim_index, 2)
 
         r = repr(addr_arg)
-        self.assertIn("value=1", r)
+        self.assertIn("tensor_id=1", r)
+        self.assertIn("dim_index=-1", r)
 
     def test_tensor_id_out_of_range_raises(self):
-        """A payload entry whose value (tensor id) exceeds the tensor list
-        length raises a loud bounds-check error rather than silently reading OOB.
+        """A payload entry whose tensor_id exceeds the tensor list length
+        raises a loud bounds-check error rather than silently reading OOB.
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             spyrecode_dir = tpk().create_mock_spyrecode(
@@ -299,11 +290,11 @@ class TestSymbolicArg(TestCase):
             job_plan = torch_spyre._C.prepare_kernel(spyrecode_dir)
 
             t = torch.zeros(64, dtype=torch.float16, device="spyre")
-            # tensor list has 1 entry (index 0); value=5 is out of range
+            # tensor list has 1 entry (index 0); tensor_id=5 is out of range
             payload = [
                 torch_spyre._C.SymbolicArg(
                     kind=torch_spyre._C.SymbolicArgKind.kAddress,
-                    value=5,
+                    tensor_id=5,
                 )
             ]
 
@@ -329,10 +320,10 @@ class TestSymbolicArg(TestCase):
         # Ground-truth address for each tensor: resolve each alone at slot 0
         # so the result is independent of ordering.
         addr_t0 = torch_spyre._C._resolve_symbolic_args(
-            [t0], [torch_spyre._C.SymbolicArg(kind=kAddr, value=0)]
+            [t0], [torch_spyre._C.SymbolicArg(kind=kAddr, tensor_id=0)]
         )[0]
         addr_t1 = torch_spyre._C._resolve_symbolic_args(
-            [t1], [torch_spyre._C.SymbolicArg(kind=kAddr, value=0)]
+            [t1], [torch_spyre._C.SymbolicArg(kind=kAddr, tensor_id=0)]
         )[0]
 
         # Tensors must be at distinct addresses — if they coincidentally share
@@ -345,12 +336,12 @@ class TestSymbolicArg(TestCase):
         )
 
         payload_fwd = [
-            torch_spyre._C.SymbolicArg(kind=kAddr, value=0),
-            torch_spyre._C.SymbolicArg(kind=kAddr, value=1),
+            torch_spyre._C.SymbolicArg(kind=kAddr, tensor_id=0),
+            torch_spyre._C.SymbolicArg(kind=kAddr, tensor_id=1),
         ]
         payload_rev = [
-            torch_spyre._C.SymbolicArg(kind=kAddr, value=1),
-            torch_spyre._C.SymbolicArg(kind=kAddr, value=0),
+            torch_spyre._C.SymbolicArg(kind=kAddr, tensor_id=1),
+            torch_spyre._C.SymbolicArg(kind=kAddr, tensor_id=0),
         ]
 
         resolved_fwd = torch_spyre._C._resolve_symbolic_args([t0, t1], payload_fwd)

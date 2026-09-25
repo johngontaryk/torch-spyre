@@ -210,12 +210,12 @@ enum class StepKind {
  * @brief Discriminator for SymbolicArg entries.
  *
  * kAddress   – the slot carries the HBM device address of a tensor.
- *              SymbolicArg::value must be a valid index into
- *              LaunchContext::inputs_outputs (enforced at the Python boundary;
- *              value=-1 is an error for this kind).
- * kDimension – the slot carries an integer dimension size.
- *              SymbolicArg::value is the concrete size, or -1 if it will be
- *              assigned later at runtime.
+ *              tensor_id is the index into LaunchContext::inputs_outputs.
+ *              dim_index is unused (stays -1).
+ * kDimension – the slot carries a runtime tensor dimension size.
+ *              tensor_id is the index into LaunchContext::inputs_outputs of
+ *              the tensor whose shape is read.
+ *              dim_index is the axis of that tensor to read.
  */
 enum class SymbolicArgKind : int32_t {
   kAddress = 0,
@@ -232,16 +232,16 @@ enum class SymbolicArgKind : int32_t {
  * preserve the backend's compile-time symbol order exactly.
  *
  * Fields:
- *   kind  – how to interpret value.
- *   value – for kAddress:   index into LaunchContext::inputs_outputs; must
- *                           be >= 0 (error if omitted or set to -1;
- *                           enforced at the Python boundary).
- *           for kDimension: concrete integer dimension size, or -1 if
- *                           assigned later at runtime.
+ *   kind      – how to resolve the slot.
+ *   tensor_id – index into LaunchContext::inputs_outputs; always required.
+ *   dim_index – for kDimension: axis of the tensor to read as the dimension
+ *               size.
+ *               for kAddress:   unused; defaults to -1.
  */
 struct SymbolicArg {
   SymbolicArgKind kind;
-  int64_t value = -1;
+  int64_t tensor_id;
+  int64_t dim_index = -1;
 };
 
 /**
@@ -556,10 +556,9 @@ class JobPlanStepHostCompute final : public JobPlanStep {
   /**
    * @brief Resolve a symbolic_args payload to a vector of int64 values.
    *
-   * Each entry is resolved according to its kind: kAddress entries use
-   * SymbolicArg::value as an index into tensors and yield the HBM device
-   * address of that tensor; kDimension is not yet implemented and
-   * TORCH_CHECK-fails at runtime.
+   * Each entry is resolved according to its kind:
+   *   kAddress   – yields the HBM device address of tensors[tensor_id].
+   *   kDimension – yields tensors[tensor_id].size(dim_index).
    *
    * Extracted from the typed-payload resolution path in construct() so that
    * the resolution logic has a single definition shared by both the hot path
@@ -568,7 +567,8 @@ class JobPlanStepHostCompute final : public JobPlanStep {
    * top-level public symbol.
    *
    * Preconditions (enforced via TORCH_CHECK):
-   *   - For kAddress: symbolic_args[i].value is a valid index into tensors.
+   *   - tensor_id is a valid index into tensors for all entries.
+   *   - For kDimension: dim_index is a valid axis of that tensor.
    */
   static std::vector<int64_t> resolveSymbolicArgs(
       const std::vector<at::Tensor>& tensors,

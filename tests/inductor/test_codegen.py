@@ -301,19 +301,19 @@ class TestSpyreConfig(InductorTestCase):
         # tensor_id == arg_index == position in the deduped call_args list.
         tensors = [a, b, out]
         addr_0 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, value=0)]
+            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0)]
         )[0]
         addr_1 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, value=1)]
+            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1)]
         )[0]
         addr_2 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, value=2)]
+            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2)]
         )[0]
 
         payload_canonical = [
-            SymbolicArg(kind=SymbolicArgKind.kAddress, value=0),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, value=1),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, value=2),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2),
         ]
         resolved = _resolve_symbolic_args(tensors, payload_canonical)
         self.assertEqual(resolved, [addr_0, addr_1, addr_2])
@@ -321,9 +321,9 @@ class TestSpyreConfig(InductorTestCase):
         # Forward-vs-reversed differential: wrong slot order must produce a
         # different address vector, proving the ordering contract is exercised.
         payload_reversed = [
-            SymbolicArg(kind=SymbolicArgKind.kAddress, value=2),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, value=1),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, value=0),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1),
+            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0),
         ]
         resolved_rev = _resolve_symbolic_args(tensors, payload_reversed)
         self.assertNotEqual(
@@ -431,21 +431,27 @@ class TestSymbolKindDimension(InductorTestCase):
     """Unit tests for the dimension variant added to compute_ops.SymbolKind."""
 
     def test_factory_sets_all_fields(self):
-        sk = SymbolKind.dimension(granularity=64, max_value=1024, pytorch_sym="s0")
+        sk = SymbolKind.dimension(
+            granularity=64, max_value=1024, pytorch_sym="s0", arg_index=0, dim_index=1
+        )
         self.assertEqual(sk.kind, "dimension")
         self.assertEqual(sk.granularity, 64)
         self.assertEqual(sk.max_value, 1024)
         self.assertEqual(sk.pytorch_sym, "s0")
+        self.assertEqual(sk.arg_index, 0)
+        self.assertEqual(sk.dim_index, 1)
 
     def test_is_dimension_true(self):
-        sk = SymbolKind.dimension(granularity=64, max_value=1024, pytorch_sym="s0")
+        sk = SymbolKind.dimension(
+            granularity=64, max_value=1024, pytorch_sym="s0", arg_index=0, dim_index=0
+        )
         self.assertTrue(sk.is_dimension)
 
     def test_address_fields_are_sentinels(self):
-        # Address-specific fields must not be set by the dimension factory so
-        # they don't collide with kernel/pool symbol-table entries.
-        sk = SymbolKind.dimension(granularity=64, max_value=1024, pytorch_sym="s0")
-        self.assertEqual(sk.arg_index, -1)
+        # Non-dimension-location fields must not be set by the dimension factory.
+        sk = SymbolKind.dimension(
+            granularity=64, max_value=1024, pytorch_sym="s0", arg_index=0, dim_index=0
+        )
         self.assertEqual(sk.base_sym_idx, -1)
         self.assertEqual(sk.offset, 0)
 
@@ -464,7 +470,7 @@ class TestPerCoreSymbolicDimInfo(InductorTestCase):
 
     def test_single_dim_no_split(self):
         # work_slices == 1 means undivided: maxSize_/granularity_ pass through.
-        symbolic_dims = {"c0": ("s0", 64, 1024)}
+        symbolic_dims = {"c0": ("s0", 64, 1024, 0, 0)}
         work_slices = {sympy.Symbol("c0"): 1}
         self.assertEqual(
             _per_core_symbolic_dim_info(symbolic_dims, work_slices),
@@ -472,7 +478,7 @@ class TestPerCoreSymbolicDimInfo(InductorTestCase):
         )
 
     def test_single_dim_split_across_cores(self):
-        symbolic_dims = {"c0": ("s0", 64, 1024)}
+        symbolic_dims = {"c0": ("s0", 64, 1024, 0, 0)}
         work_slices = {sympy.Symbol("c0"): 4}
         self.assertEqual(
             _per_core_symbolic_dim_info(symbolic_dims, work_slices),
@@ -482,15 +488,15 @@ class TestPerCoreSymbolicDimInfo(InductorTestCase):
     def test_granularity_floors_at_one(self):
         # granularity // wk_slices would floor to 0; result must clamp to 1
         # so the runtime never sees a zero batch-size granularity.
-        symbolic_dims = {"c0": ("s0", 1, 1024)}
+        symbolic_dims = {"c0": ("s0", 1, 1024, 0, 0)}
         work_slices = {sympy.Symbol("c0"): 4}
         result = _per_core_symbolic_dim_info(symbolic_dims, work_slices)
         self.assertEqual(result["c0"], {"maxSize_": 256, "granularity_": 1})
 
     def test_multiple_symbolic_dims_independent(self):
         symbolic_dims = {
-            "c0": ("s0", 64, 1024),
-            "c1": ("s1", 32, 512),
+            "c0": ("s0", 64, 1024, 0, 0),
+            "c1": ("s1", 32, 512, 0, 1),
         }
         work_slices = {
             sympy.Symbol("c0"): 4,
