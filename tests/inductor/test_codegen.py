@@ -284,8 +284,11 @@ class TestSpyreConfig(InductorTestCase):
         """The runner builds one SymbolicArg(kAddress) per backend symbol in
         canonical inputSym_ order using generate_bundle()'s returned symbol_kinds.
 
-        Verifies the resolved address vector is correct and that a reversed payload
-        yields a different vector -- proving the ordering contract is load-bearing.
+        Captures the actual payload passed to launch_jobplan and resolves it so
+        that any ordering bug in the runner is caught, not just bugs in
+        resolveSymbolicArgs itself.  Also verifies that a reversed payload
+        produces a different address vector, proving the ordering contract is
+        load-bearing.
         """
 
         def fn(a, b):
@@ -294,38 +297,44 @@ class TestSpyreConfig(InductorTestCase):
         a = torch.randn((128, 64), dtype=torch.float16, device="spyre")
         b = torch.randn((128, 64), dtype=torch.float16, device="spyre")
 
+        captured = {}
+
+        def _capture_launch(job_plan, args, symbolic_args=()):
+            captured["args"] = list(args)
+            captured["symbolic_args"] = list(symbolic_args)
+
         with config.patch({"bundle_symbolic_args": True}):
             comp_fn = torch.compile(fn)
-            out, source_codes = run_and_get_code(comp_fn, a, b)
+            with patch(
+                "torch_spyre.execution.kernel_runner.launch_jobplan",
+                side_effect=_capture_launch,
+            ):
+                comp_fn(a, b)
 
-        # Ground-truth: resolve each tensor by its known run() position.
-        # tensor_id == arg_index == position in the deduped call_args list.
-        tensors = [a, b, out]
-        addr_0 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0)]
-        )[0]
-        addr_1 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1)]
-        )[0]
-        addr_2 = _resolve_symbolic_args(
-            tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2)]
-        )[0]
+        self.assertIn("symbolic_args", captured, "launch_jobplan was not called")
+        tensors = captured["args"]
+        symbolic_args = captured["symbolic_args"]
 
-        payload_canonical = [
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2),
+        # Resolve the real payload the runner built.
+        resolved = _resolve_symbolic_args(tensors, symbolic_args)
+
+        # Ground-truth per slot: tensor_id for each position in the deduped
+        # call_args list (0 → a, 1 → b, 2 → out).
+        addr = [
+            _resolve_symbolic_args(
+                tensors, [SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=i)]
+            )[0]
+            for i in range(len(tensors))
         ]
-        resolved = _resolve_symbolic_args(tensors, payload_canonical)
-        self.assertEqual(resolved, [addr_0, addr_1, addr_2])
+        self.assertEqual(
+            resolved,
+            [addr[sa.tensor_id] for sa in symbolic_args],
+            "resolved addresses do not match expected per-tensor order",
+        )
 
         # Forward-vs-reversed differential: wrong slot order must produce a
         # different address vector, proving the ordering contract is exercised.
-        payload_reversed = [
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=2),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=1),
-            SymbolicArg(kind=SymbolicArgKind.kAddress, tensor_id=0),
-        ]
+        payload_reversed = list(reversed(symbolic_args))
         resolved_rev = _resolve_symbolic_args(tensors, payload_reversed)
         self.assertNotEqual(
             resolved,
@@ -333,7 +342,10 @@ class TestSpyreConfig(InductorTestCase):
             "canonical and reversed payloads resolved identically -- "
             "all tensors share an address so ordering is not exercised",
         )
-        self.assertEqual(resolved_rev, [addr_2, addr_1, addr_0])
+        self.assertEqual(
+            resolved_rev,
+            [addr[sa.tensor_id] for sa in payload_reversed],
+        )
 
 
 class TestResolveSdscSize(InductorTestCase):

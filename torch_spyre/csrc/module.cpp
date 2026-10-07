@@ -658,28 +658,30 @@ PYBIND11_MODULE(_C, m) {
 
   // Test-only seam: exposes JobPlanStepHostCompute::resolveSymbolicArgs so
   // that Python tests can verify the HostComputeArg ordering without needing
-  // a live HCM or device execution. Returns one CompositeAddressHandle per
-  // slot (kDimension is not yet implemented). The "_" prefix signals this is
-  // not part of the stable public API.
+  // a live HCM or device execution. Returns one integer (CompositeAddress*
+  // cast to uintptr_t) per resolved slot — same tensor yields the same
+  // integer, different tensor yields a different integer, so any ordering bug
+  // inside resolveSymbolicArgs is directly visible as a mismatched int vector.
+  // The "_" prefix signals this is not part of the stable public API.
   m.def(
       "_resolve_symbolic_args",
       [](const std::vector<at::Tensor>& tensors,
          const std::vector<spyre::SymbolicArg>& symbolic_args) {
-        // Call resolveSymbolicArgs to validate all preconditions (bounds,
-        // kind checks). We then wrap each resolved tensor in a
-        // CompositeAddressHandle for Python-side comparison via __eq__.
-        spyre::JobPlanStepHostCompute::resolveSymbolicArgs(tensors,
-                                                           symbolic_args);
-        std::vector<spyre::CompositeAddressHandle> handles;
-        handles.reserve(symbolic_args.size());
-        for (const auto& arg : symbolic_args) {
-          handles.emplace_back(tensors[static_cast<size_t>(arg.tensor_id)]);
+        const auto resolved =
+            spyre::JobPlanStepHostCompute::resolveSymbolicArgs(tensors,
+                                                               symbolic_args);
+        std::vector<uintptr_t> addrs;
+        addrs.reserve(resolved.size());
+        for (const auto& host_arg : resolved) {
+          addrs.push_back(reinterpret_cast<uintptr_t>(
+              std::get<const flex::CompositeAddress*>(host_arg)));
         }
-        return handles;
+        return addrs;
       },
       py::arg("tensors"), py::arg("symbolic_args"),
-      "Test-only: resolve a symbolic_args payload to a list of "
-      "CompositeAddressHandles.");
+      "Test-only: resolve a symbolic_args payload to a list of device-address "
+      "integers (CompositeAddress* cast to uintptr_t). Same tensor yields the "
+      "same integer; different tensor yields a different integer.");
 
   // ── Two-stream overlap: step-ordering validator + test hooks ──
 
