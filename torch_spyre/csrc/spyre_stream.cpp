@@ -322,14 +322,6 @@ void SpyreStream::launch(const JobPlan& plan,
   const SpyreStream& s_dev = *this;
   const SpyreStream s_prep =
       getHostComputeStreamById(kHostComputeStreamStartPerDevice, device());
-  // three_stream requires the hazard tracker (it inserts the S_dma → S_dev
-  // cross-stream edge automatically). Without it, fall back to two-stream.
-  const bool three_stream =
-      should_split && (std::getenv("TORCH_SPYRE_THREE_STREAM") != nullptr);
-  const SpyreStream s_dma =
-      three_stream ? SpyreStream(c10::Stream(c10::Stream::UNSAFE, device(),
-                                             kDmaStreamId))
-                   : s_prep;
 
   // Create launch context with tensor arguments and typed symbolic payload.
   // symbolic_args is moved in so the closure in
@@ -345,6 +337,14 @@ void SpyreStream::launch(const JobPlan& plan,
   // This switch controls stream splitting only: eligible correction batching is
   // enabled in both topologies, including the single-stream path.
   const bool should_split = get_hazard_tracker_enabled();
+  // three_stream requires the hazard tracker (it inserts the S_dma → S_dev
+  // cross-stream edge automatically). Without it, fall back to two-stream.
+  const bool three_stream =
+      should_split && (std::getenv("TORCH_SPYRE_THREE_STREAM") != nullptr);
+  const SpyreStream s_dma =
+      three_stream ? SpyreStream(c10::Stream(c10::Stream::UNSAFE, device(),
+                                             kDmaStreamId))
+                   : s_prep;
   for (size_t i = 0; i < plan.steps.size(); ++i) {
     const auto& step = plan.steps[i];
     const auto kind = classifyStep(*step);
