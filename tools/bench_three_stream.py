@@ -32,9 +32,11 @@ Usage:
     python tools/bench_three_stream.py --steps 100 --m 4 --k 4096 --n 4096
 
 Output per topology per scenario:
-    RESULT scenario=single_matmul   topology=two_stream   total_ms=X.X  per_step_ms=X.XXX
-    RESULT scenario=single_matmul   topology=three_stream total_ms=X.X  per_step_ms=X.XXX
-    SPEEDUP single_matmul three_stream_vs_two_stream=X.XXXx
+
+    ┌─ single_matmul ──────────────────────────────────────────────────────┐
+      two_stream    total_ms=X.X  per_step_ms=X.XXX  min_ms=X.X  cv=X.X%
+      three_stream  total_ms=X.X  per_step_ms=X.XXX  min_ms=X.X  cv=X.X%
+    ▲ 3-stream FASTER  +X.X ms/step (X.XXXx)
 """
 
 import argparse
@@ -105,7 +107,6 @@ def _run_trial(compiled_fn: Callable, x: torch.Tensor, steps: int) -> float:
 
 
 def _compile_and_benchmark(
-    scenario_name: str,
     topology_name: str,
     env_val: str | None,
     fn_factory: Callable[[], Callable],
@@ -117,7 +118,6 @@ def _compile_and_benchmark(
     """Compile fn_factory() under the given topology and measure wall time.
 
     Args:
-        scenario_name:  Label for the workload (e.g. "single_matmul").
         topology_name:  "two_stream" or "three_stream".
         env_val:        Value for TORCH_SPYRE_THREE_STREAM, or None to unset.
         fn_factory:     Callable that returns the Python function to compile.
@@ -150,9 +150,9 @@ def _compile_and_benchmark(
     cv = std / statistics.fmean(totals) * 100.0 if totals else 0.0
 
     print(
-        f"RESULT scenario={scenario_name:<18s}  topology={topology_name:<15s}  "
-        f"total_ms={median:.1f}  per_step_ms={median / steps:.3f}  "
-        f"min_ms={minimum:.1f}  cv={cv:.1f}%"
+        f"  {topology_name:<14s}  "
+        f"total_ms={median:7.1f}  per_step_ms={median / steps:.3f}  "
+        f"min_ms={minimum:7.1f}  cv={cv:4.1f}%"
     )
     return median
 
@@ -162,13 +162,17 @@ def _run_scenario(
     fn_factory: Callable[[], Callable],
     x: torch.Tensor,
     args: argparse.Namespace,
+    title: str = "",
 ) -> float:
     """Run two_stream then three_stream for one scenario and print the speedup.
 
     Returns the speedup ratio (two_ms / three_ms).
     """
+    width = 70
+    display = f"{scenario_name}  —  {title}" if title else scenario_name
+    fill = max(0, width - len(display) - 4)
+    print(f"┌─ {display} {'─' * fill}┐")
     two_ms = _compile_and_benchmark(
-        scenario_name,
         "two_stream",
         None,
         fn_factory,
@@ -178,7 +182,6 @@ def _run_scenario(
         args.reps,
     )
     three_ms = _compile_and_benchmark(
-        scenario_name,
         "three_stream",
         "1",
         fn_factory,
@@ -188,14 +191,20 @@ def _run_scenario(
         args.reps,
     )
     speedup = two_ms / three_ms if three_ms > 0 else float("inf")
-    tag = (
-        "FASTER  (>2% improvement)"
-        if speedup > 1.02
-        else "SLOWER  (>2% regression)"
-        if speedup < 0.98
-        else "no meaningful difference (<2%)"
-    )
-    print(f"SPEEDUP {scenario_name} three_stream_vs_two_stream={speedup:.3f}x  → {tag}")
+    delta_ms = (two_ms - three_ms) / args.steps  # ms saved per step (positive = faster)
+    if speedup > 1.02:
+        icon, verdict = (
+            "▲",
+            f"3-stream FASTER  +{delta_ms:.3f} ms/step  ({speedup:.3f}x)",
+        )
+    elif speedup < 0.98:
+        icon, verdict = (
+            "▼",
+            f"3-stream SLOWER  {delta_ms:.3f} ms/step  ({speedup:.3f}x)",
+        )
+    else:
+        icon, verdict = "~", f"no meaningful difference  ({speedup:.3f}x)"
+    print(f"{icon} {verdict}")
     return speedup
 
 
@@ -221,7 +230,13 @@ def bench_single_matmul(args: argparse.Namespace) -> None:
         return fn
 
     x = torch.randn(args.m, args.k, dtype=torch.float16).to("spyre")
-    _run_scenario("single_matmul", fn_factory, x, args)
+    _run_scenario(
+        "single_matmul",
+        fn_factory,
+        x,
+        args,
+        title=f"Single matmul  x@W  (M={args.m}, K={args.k}, N={args.n})",
+    )
 
 
 def bench_pointwise_chain(args: argparse.Namespace) -> None:
@@ -239,7 +254,13 @@ def bench_pointwise_chain(args: argparse.Namespace) -> None:
         return fn
 
     x = torch.randn(args.m, args.k, dtype=torch.float16).to("spyre")
-    _run_scenario("pointwise_chain", fn_factory, x, args)
+    _run_scenario(
+        "pointwise_chain",
+        fn_factory,
+        x,
+        args,
+        title="Pointwise chain  abs→relu→neg  (exercises s_dma)",
+    )
 
 
 def bench_matmul_chain(args: argparse.Namespace) -> None:
@@ -260,7 +281,13 @@ def bench_matmul_chain(args: argparse.Namespace) -> None:
         return fn
 
     x = torch.randn(args.m, args.k, dtype=torch.float16).to("spyre")
-    _run_scenario("matmul_chain", fn_factory, x, args)
+    _run_scenario(
+        "matmul_chain",
+        fn_factory,
+        x,
+        args,
+        title="Two matmuls + relu  (longer step sequence)",
+    )
 
 
 def bench_m_sweep(args: argparse.Namespace) -> None:
@@ -271,8 +298,12 @@ def bench_m_sweep(args: argparse.Namespace) -> None:
     exact crossover point where 3-stream stops helping on the current hardware.
     """
     sweep_values = [1, 2, 4, 8, 16, 32, 128]
-    print(f"  m_sweep  K={args.k}  N={args.n}")
-    print(f"  {'M':>5}  {'speedup':>8}")
+    width = 70
+    header = f"M sweep  x@W  K={args.k}  N={args.n}  — crossover table"
+    fill = max(0, width - len(header) - 4)
+    print(f"┌─ m_sweep  —  {header} {'─' * fill}┐")
+    print(f"  {'M':>5}  {'speedup':>9}  verdict")
+    print(f"  {'─' * 5}  {'─' * 9}  {'─' * 26}")
 
     for m in sweep_values:
 
@@ -286,8 +317,21 @@ def bench_m_sweep(args: argparse.Namespace) -> None:
 
         x = torch.randn(m, args.k, dtype=torch.float16).to("spyre")
         label = f"m_sweep_m{m}"
-        speedup = _run_scenario(label, fn_factory, x, args)
-        print(f"  {m:>5}  {speedup:>8.3f}x")
+        speedup = _run_scenario(
+            label,
+            fn_factory,
+            x,
+            args,
+            title=f"M={m}  K={args.k}  N={args.n}",
+        )
+        if speedup > 1.02:
+            icon, note = "▲", "faster"
+        elif speedup < 0.98:
+            icon, note = "▼", "slower"
+        else:
+            icon, note = "~", "no diff"
+        print(f"  {m:>5}  {speedup:>8.3f}x  {icon} {note}")
+        print()
 
 
 def bench_decode_attn(args: argparse.Namespace) -> None:
@@ -315,7 +359,13 @@ def bench_decode_attn(args: argparse.Namespace) -> None:
         return fn
 
     q = torch.randn(1, heads, 1, head_dim, dtype=torch.float16).to("spyre")
-    _run_scenario("decode_attn", fn_factory, q, args)
+    _run_scenario(
+        "decode_attn",
+        fn_factory,
+        q,
+        args,
+        title=f"KV-cache decode  Q@K  (heads={heads}, head_dim={head_dim}, seqlen={seqlen})",
+    )
 
 
 def bench_prefill(args: argparse.Namespace) -> None:
@@ -336,7 +386,13 @@ def bench_prefill(args: argparse.Namespace) -> None:
         return fn
 
     x = torch.randn(prefill_m, args.k, dtype=torch.float16).to("spyre")
-    _run_scenario("prefill_m512", fn_factory, x, args)
+    _run_scenario(
+        "prefill_m512",
+        fn_factory,
+        x,
+        args,
+        title=f"Prefill  x@W  (M=512, K={args.k}, N={args.n})  — expect ~1.0x",
+    )
 
 
 def bench_deep_mlp(args: argparse.Namespace) -> None:
@@ -362,7 +418,13 @@ def bench_deep_mlp(args: argparse.Namespace) -> None:
         return fn
 
     x = torch.randn(args.m, args.k, dtype=torch.float16).to("spyre")
-    _run_scenario("deep_mlp", fn_factory, x, args)
+    _run_scenario(
+        "deep_mlp",
+        fn_factory,
+        x,
+        args,
+        title="Deep MLP  4x(linear+gelu)  (more corrections per step)",
+    )
 
 
 def bench_tall_thin_kn(args: argparse.Namespace) -> None:
@@ -384,7 +446,13 @@ def bench_tall_thin_kn(args: argparse.Namespace) -> None:
         return fn
 
     x = torch.randn(1, thin_k, dtype=torch.float16).to("spyre")
-    _run_scenario("tall_thin_kn", fn_factory, x, args)
+    _run_scenario(
+        "tall_thin_kn",
+        fn_factory,
+        x,
+        args,
+        title="Tall-thin projection  x@W  (M=1, K=512, N=8192)  — max correction ratio",
+    )
 
 
 # ---------------------------------------------------------------------------
